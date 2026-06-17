@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Avalor — UK Development Appraisal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #1D9E75;
+      --green-dark: #0F6E56;
+      --green-light: #E1F5EE;
+      --green-text: #085041;
+      --amber: #BA7517;
+      --amber-light: #FAEEDA;
+      --red: #A32D2D;
+      --red-light: #FCEBEB;
+      --bg: #F7F8FA;
+      --bg-card: #FFFFFF;
+      --bg-secondary: #F1F3F6;
+      --border: #E4E7EC;
+      --border-strong: #CDD2DB;
+      --text: #111827;
+      --text-secondary: #6B7280;
+      --text-tertiary: #9CA3AF;
+      --radius: 10px;
+      --radius-sm: 6px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.04);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* AUTH PAGES */
+    .auth-wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      background: linear-gradient(135deg, #0F6E56 0%, #1D9E75 50%, #2DC68E 100%);
+    }
+
+    .auth-box {
+      background: var(--bg-card);
+      border-radius: 16px;
+      padding: 2.5rem;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+    }
+
+    .auth-logo {
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+      text-align: center;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+
+    .auth-logo span { color: var(--green); }
+
+    .auth-tagline {
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 2rem;
+    }
+
+    .auth-heading {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .auth-sub {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-bottom: 1.75rem;
+    }
+
+    .form-group { margin-bottom: 1.1rem; }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--bg-card);
+      transition: border-color 0.15s;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px rgba(29,158,117,0.1);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 18px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
+      transition: all 0.15s;
+      text-decoration: none;
+    }
+
+    .btn:hover { background: var(--bg-secondary); }
+
+    .btn-primary {
+      background: var(--green);
+      color: #fff;
+      border-color: var(--green);
+    }
+
+    .btn-primary:hover { background: var(--green-dark); border-color: var(--green-dark); }
+    .btn-full { width: 100%; }
+    .btn-sm { padding: 6px 14px; font-size: 13px; }
+
+    .auth-divider {
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 1.25rem;
+    }
+
+    .auth-divider a {
+      color: var(--green);
+      cursor: pointer;
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .error-msg {
+      background: var(--red-light);
+      color: var(--red);
+      font-size: 13px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    .success-msg {
+      background: var(--green-light);
+      color: var(--green-text);
+      font-size: 13px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    /* TRIAL BANNER */
+    .trial-banner {
+      background: var(--amber-light);
+      border-bottom: 1px solid #F5C842;
+      padding: 10px 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      font-size: 13px;
+      color: #7A4E00;
+    }
+
+    .trial-banner strong { font-weight: 600; }
+    .trial-banner .btn { padding: 4px 12px; font-size: 12px; }
+
+    /* TOP NAV */
+    .topbar {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      height: 60px;
+      gap: 2rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .topbar-logo {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.4px;
+      flex-shrink: 0;
+      color: var(--text);
+    }
+
+    .topbar-logo span { color: var(--green); }
+
+    .topbar-nav {
+      display: flex;
+      gap: 2px;
+      flex: 1;
+      justify-content: center;
+    }
+
+    .nav-tab {
+      padding: 7px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 400;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      transition: all 0.15s;
+      font-family: inherit;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-tab:hover { background: var(--bg-secondary); color: var(--text); }
+    .nav-tab.active { background: var(--bg-secondary); color: var(--text); font-weight: 500; }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .tier-badge {
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-weight: 500;
+    }
+
+    .tier-badge.essential { background: var(--bg-secondary); color: var(--text-secondary); }
+    .tier-badge.professional { background: var(--green-light); color: var(--green-text); }
+    .tier-badge.trial { background: var(--amber-light); color: #7A4E00; }
+
+    /* PAGE LAYOUT */
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .page-wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 1.75rem;
+    }
+
+    .page-title { font-size: 20px; font-weight: 600; }
+    .page-subtitle { font-size: 14px; color: var(--text-secondary); margin-top: 3px; }
+
+    /* CARDS */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+    }
+
+    .card-title i { color: var(--green); font-size: 18px; }
+
+    /* FORM ELEMENTS */
+    .input-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    .input-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    select.form-input { cursor: pointer; }
+
+    .postcode-row { display: flex; gap: 10px; margin-bottom: 1.25rem; }
+    .postcode-row input { flex: 1; }
+
+    /* METRIC TILES */
+    .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .metrics-grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
+
+    .metric-tile {
+      background: var(--bg-secondary);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+    }
+
+    .metric-tile-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+    .metric-tile-value { font-size: 22px; font-weight: 600; }
+    .metric-tile-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+
+    .metric-tile.highlight { background: var(--green-light); }
+    .metric-tile.highlight .metric-tile-value { color: var(--green-text); }
+
+    /* VERDICT */
+    .verdict {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: var(--radius-sm);
+      margin-top: 12px;
+    }
+
+    .verdict.viable { background: var(--green-light); color: var(--green-text); }
+    .verdict.marginal { background: var(--amber-light); color: #7A4E00; }
+    .verdict.not-viable { background: var(--red-light); color: var(--red); }
+    .verdict i { font-size: 22px; flex-shrink: 0; }
+    .verdict-title { font-weight: 600; font-size: 15px; }
+    .verdict-desc { font-size: 13px; margin-top: 2px; opacity: 0.85; }
+
+    /* RISK FLAGS */
+    .risk-list { list-style: none; }
+
+    .risk-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    .risk-item:last-child { border-bottom: none; }
+
+    .flag {
+      font-size: 11px;
+      padding: 2px 9px;
+      border-radius: 20px;
+      font-weight: 500;
+    }
+
+    .flag-safe { background: var(--green-light); color: var(--green-text); }
+    .flag-warn { background: var(--amber-light); color: #7A4E00; }
+    .flag-risk { background: var(--red-light); color: var(--red); }
+
+    /* TWO COLUMN LAYOUT */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
+
+    /* SENSITIVITY TABLE */
+    .sens-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .sens-table th { font-size: 11px; font-weight: 500; color: var(--text-secondary); padding: 7px 9px; text-align: center; background: var(--bg-secondary); }
+    .sens-table th:first-child { text-align: left; }
+    .sens-table td { padding: 7px 9px; text-align: center; border: 1px solid var(--border); }
+    .cell-green { background: var(--green-light); color: var(--green-text); font-weight: 600; }
+    .cell-amber { background: var(--amber-light); color: #7A4E00; font-weight: 600; }
+    .cell-red { background: var(--red-light); color: var(--red); font-weight: 600; }
+
+    /* DEAL RESILIENCE */
+    .resilience-summary {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 14px 16px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 1.25rem;
+    }
+
+    .resilience-summary.good { background: var(--green-light); }
+    .resilience-summary.ok { background: var(--amber-light); }
+    .resilience-summary.bad { background: var(--red-light); }
+    .resilience-summary i { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+    .resilience-summary.good i { color: var(--green); }
+    .resilience-summary.ok i { color: var(--amber); }
+    .resilience-summary.bad i { color: var(--red); }
+    .resilience-headline { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+    .resilience-summary.good .resilience-headline { color: var(--green-text); }
+    .resilience-summary.ok .resilience-headline { color: #7A4E00; }
+    .resilience-summary.bad .resilience-headline { color: var(--red); }
+    .resilience-detail { font-size: 13px; line-height: 1.55; }
+    .resilience-summary.good .resilience-detail { color: #0F6E56; }
+    .resilience-summary.ok .resilience-detail { color: #854F0B; }
+    .resilience-summary.bad .resilience-detail { color: var(--red); }
+
+    .headroom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1.25rem; }
+
+    .headroom-card {
+      background: var(--bg-secondary);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+    }
+
+    .headroom-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+
+    .headroom-track {
+      height: 7px;
+      background: var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 7px;
+    }
+
+    .headroom-fill { height: 100%; border-radius: 4px; background: var(--green); transition: width 0.5s ease; }
+    .headroom-val { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+
+    .detail-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-family: inherit;
+      padding: 0;
+      margin-bottom: 1rem;
+    }
+
+    .detail-toggle:hover { color: var(--text); }
+
+    .sens-legend { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); }
+    .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+    /* AREA SNAPSHOT */
+    .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .bar-year { font-size: 12px; color: var(--text-secondary); width: 38px; flex-shrink: 0; text-align: right; }
+    .bar-track { flex: 1; background: var(--bg-secondary); border-radius: 3px; height: 22px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; background: var(--green); display: flex; align-items: center; padding-left: 8px; }
+    .bar-val { font-size: 11px; color: var(--green-text); font-weight: 600; white-space: nowrap; }
+    .bar-val-out { font-size: 11px; color: var(--text-secondary); margin-left: 6px; white-space: nowrap; }
+
+    .type-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .type-tile { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
+    .type-name { font-size: 12px; color: var(--text-secondary); margin-bottom: 3px; }
+    .type-price { font-size: 16px; font-weight: 600; }
+    .type-change { font-size: 11px; margin-top: 2px; }
+    .type-change.up { color: var(--green); }
+    .type-change.flat { color: var(--text-tertiary); }
+
+    .price-growth-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 12px;
+    }
+
+    .growth-track { flex: 1; height: 5px; background: var(--bg-secondary); border-radius: 3px; overflow: hidden; }
+    .growth-fill { height: 100%; background: var(--green); border-radius: 3px; }
+
+    .source-note { font-size: 11px; color: var(--text-tertiary); display: flex; align-items: center; gap: 4px; margin-top: 12px; }
+
+    .hr { border: none; border-top: 1px solid var(--border); margin: 1.25rem 0; }
+
+    /* SAVED DEALS */
+    .deal-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      box-shadow: var(--shadow);
+      transition: box-shadow 0.15s;
+    }
+
+    .deal-card:hover { box-shadow: var(--shadow-md); }
+
+    .deal-info { flex: 1; }
+    .deal-address { font-size: 15px; font-weight: 500; }
+    .deal-meta { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+
+    .deal-stat { text-align: center; min-width: 80px; }
+    .deal-stat-label { font-size: 11px; color: var(--text-secondary); }
+    .deal-stat-value { font-size: 17px; font-weight: 600; margin-top: 2px; }
+    .deal-stat-value.green { color: var(--green); }
+    .deal-stat-value.amber { color: var(--amber); }
+    .deal-stat-value.red { color: var(--red); }
+
+    .deal-actions { display: flex; gap: 8px; }
+
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: var(--text-secondary);
+    }
+
+    .empty-state i { font-size: 40px; color: var(--text-tertiary); margin-bottom: 1rem; display: block; }
+    .empty-state h3 { font-size: 16px; font-weight: 500; margin-bottom: 6px; color: var(--text); }
+    .empty-state p { font-size: 14px; margin-bottom: 1.5rem; }
+
+    /* COMPARE TABLE */
+    .compare-table { width: 100%; border-collapse: collapse; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; table-layout: fixed; }
+    .compare-table th, .compare-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+    .compare-table tr:last-child td, .compare-table tr:last-child th { border-bottom: none; }
+    .compare-label-col { width: 36%; background: var(--bg-secondary); color: var(--text-secondary); font-weight: 400; }
+    .compare-deal-col { width: 32%; text-align: center; }
+    .compare-deal-col-2 { width: 32%; text-align: center; border-left: 1px solid var(--border); }
+    .compare-section-row th { background: var(--bg-secondary); font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; padding: 7px 14px; }
+    .compare-head-1 { background: var(--green-light); color: var(--green-text); font-weight: 600; text-align: center; font-size: 13px; }
+    .compare-head-2 { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; text-align: center; font-size: 13px; border-left: 1px solid var(--border); }
+    .compare-better { color: var(--green); font-weight: 600; }
+    .compare-worse { color: var(--red); }
+
+    /* UPGRADE MODAL */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 500;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .modal-backdrop.open { display: flex; }
+
+    .modal {
+      background: var(--bg-card);
+      border-radius: 16px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 580px;
+      position: relative;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-size: 20px;
+      line-height: 1;
+      padding: 4px;
+      border-radius: var(--radius-sm);
+    }
+
+    .modal-close:hover { background: var(--bg-secondary); color: var(--text); }
+
+    .modal-title { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+    .modal-sub { font-size: 14px; color: var(--text-secondary); margin-bottom: 1.75rem; }
+
+    .upgrade-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+
+    .upgrade-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+    }
+
+    .upgrade-card.featured { border: 2px solid var(--green); }
+
+    .popular-badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: var(--green);
+      color: #fff;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .upgrade-plan-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .upgrade-price { font-size: 28px; font-weight: 600; margin-bottom: 10px; }
+    .upgrade-price span { font-size: 14px; color: var(--text-secondary); font-weight: 400; }
+
+    .upgrade-features { list-style: none; margin-bottom: 1.25rem; }
+    .upgrade-features li { font-size: 13px; color: var(--text-secondary); padding: 4px 0; display: flex; align-items: center; gap: 7px; }
+    .upgrade-features li i { color: var(--green); font-size: 14px; flex-shrink: 0; }
+    .upgrade-features li.muted { color: var(--text-tertiary); }
+    .upgrade-features li.muted i { color: var(--text-tertiary); }
+
+    .modal-footer { text-align: center; font-size: 12px; color: var(--text-tertiary); }
+    .modal-footer i { vertical-align: -2px; margin-right: 3px; }
+
+    /* ACCOUNT PAGE */
+    .account-section { margin-bottom: 2rem; }
+    .account-section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 1rem; }
+
+    /* PRO LOCK */
+    .pro-lock {
+      text-align: center;
+      padding: 3rem 2rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+
+    .pro-lock i { font-size: 32px; color: var(--text-tertiary); margin-bottom: 1rem; display: block; }
+    .pro-lock h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+    .pro-lock p { font-size: 14px; color: var(--text-secondary); margin-bottom: 1.5rem; }
+
+    /* ONBOARDING */
+    .onboarding-card {
+      background: linear-gradient(135deg, var(--green-light), #fff);
+      border: 1px solid #9FE1CB;
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .onboarding-title { font-size: 15px; font-weight: 600; color: var(--green-text); margin-bottom: 4px; }
+    .onboarding-sub { font-size: 13px; color: #0F6E56; margin-bottom: 1.25rem; }
+
+    .onboarding-steps { display: flex; gap: 1rem; }
+
+    .onboarding-step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      flex: 1;
+    }
+
+    .step-num {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--border);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .step-num.done { background: var(--green); color: #fff; }
+    .step-num.active { background: var(--green-text); color: #fff; }
+
+    /* SDLT TABLE */
+    .sdlt-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
+    /* LOADING */
+    .loading-spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* TOAST */
+    .toast-wrap {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      z-index: 600;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .toast {
+      background: var(--text);
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      box-shadow: var(--shadow-md);
+      animation: slideIn 0.2s ease;
+    }
+
+    .toast.success { background: var(--green); }
+    .toast.error { background: var(--red); }
+
+    @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* RESPONSIVE */
+    @media (max-width: 768px) {
+      .two-col, .input-grid-3, .metrics-grid, .upgrade-grid { grid-template-columns: 1fr; }
+      .topbar-nav { display: none; }
+      .page-wrap { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- AUTH: LOGIN -->
+<div id="auth-login">
+  <div class="auth-wrap">
+    <div class="auth-box">
+      <div class="auth-logo">Avalo<span>r</span></div>
+      <div class="auth-tagline">UK residential development appraisal</div>
+      <div class="auth-heading">Sign in</div>
+      <div class="auth-sub">Welcome back — enter your details below</div>
+      <div class="error-msg" id="login-error"></div>
+      <div class="form-group">
+        <label class="form-label">Email address</label>
+        <input type="email" class="form-input" id="login-email" placeholder="you@example.com" autocomplete="email"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input type="password" class="form-input" id="login-password" placeholder="••••••••" autocomplete="current-password"/>
+      </div>
+      <button class="btn btn-primary btn-full" id="login-btn" onclick="handleLogin()">Sign in</button>
+      <div class="auth-divider" style="margin-top:1rem">
+        Don't have an account? <a onclick="showAuth('signup')">Start free trial</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- AUTH: SIGNUP -->
+<div id="auth-signup" style="display:none">
+  <div class="auth-wrap">
+    <div class="auth-box">
+      <div class="auth-logo">Avalo<span>r</span></div>
+      <div class="auth-tagline">UK residential development appraisal</div>
+      <div class="auth-heading">Start your free trial</div>
+      <div class="auth-sub">14 days free, no card required. Cancel anytime.</div>
+      <div class="error-msg" id="signup-error"></div>
+      <div class="success-msg" id="signup-success"></div>
+      <div class="form-group">
+        <label class="form-label">Full name</label>
+        <input type="text" class="form-input" id="signup-name" placeholder="Adam Smith" autocomplete="name"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email address</label>
+        <input type="email" class="form-input" id="signup-email" placeholder="you@example.com" autocomplete="email"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input type="password" class="form-input" id="signup-password" placeholder="At least 8 characters" autocomplete="new-password"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">I am a...</label>
+        <select class="form-input" id="signup-role">
+          <option value="">Select your role</option>
+          <option>Solo developer</option>
+          <option>Property sourcer</option>
+          <option>Development finance broker</option>
+          <option>Architect / planning consultant</option>
+          <option>Estate agent</option>
+          <option>Other property professional</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-full" id="signup-btn" onclick="handleSignup()">Create account — it's free</button>
+      <div class="auth-divider" style="margin-top:1rem">
+        Already have an account? <a onclick="showAuth('login')">Sign in</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app" style="display:none">
+
+  <!-- Trial Banner -->
+  <div class="trial-banner" id="trial-banner" style="display:none">
+    <i class="ti ti-clock"></i>
+    <span>Your free trial ends in <strong id="trial-days-left">14 days</strong> — upgrade to keep full access.</span>
+    <button class="btn btn-sm btn-primary" onclick="openUpgrade()">Upgrade now</button>
+  </div>
+
+  <!-- Top Nav -->
+  <div class="topbar">
+    <div class="topbar-logo">Avalo<span>r</span></div>
+    <nav class="topbar-nav">
+      <button class="nav-tab active" onclick="showPage('appraisal',this)" id="tab-appraisal">
+        <i class="ti ti-calculator"></i>Appraisal
+      </button>
+      <button class="nav-tab" onclick="showPage('saved',this)" id="tab-saved">
+        <i class="ti ti-bookmark"></i>Saved deals
+      </button>
+      <button class="nav-tab" onclick="showPage('compare',this)" id="tab-compare">
+        <i class="ti ti-arrows-left-right"></i>Compare
+      </button>
+      <button class="nav-tab" onclick="showPage('account',this)" id="tab-account">
+        <i class="ti ti-user"></i>Account
+      </button>
+    </nav>
+    <div class="topbar-right">
+      <span class="tier-badge trial" id="tier-badge">Trial</span>
+      <button class="btn btn-sm btn-primary" onclick="openUpgrade()">Upgrade</button>
+    </div>
+  </div>
+
+  <!-- APPRAISAL PAGE -->
+  <div class="page active" id="page-appraisal">
+    <div class="page-wrap">
+      <div class="page-header">
+        <div>
+          <div class="page-title">New appraisal</div>
+          <div class="page-subtitle">Enter a postcode to run your development viability assessment</div>
+        </div>
+        <button class="btn btn-primary" onclick="saveCurrentAppraisal()" id="save-btn" style="display:none">
+          <i class="ti ti-bookmark"></i>Save appraisal
+        </button>
+      </div>
+
+      <!-- Onboarding checklist (shown until all steps done) -->
+      <div class="onboarding-card" id="onboarding-card">
+        <div class="onboarding-title">Welcome to Avalor — let's get started</div>
+        <div class="onboarding-sub">Complete these steps to make the most of your trial</div>
+        <div class="onboarding-steps">
+          <div class="onboarding-step">
+            <div class="step-num active" id="step1-num">1</div>
+            <span id="step1-text">Run your first appraisal</span>
+          </div>
+          <div class="onboarding-step">
+            <div class="step-num" id="step2-num">2</div>
+            <span>Save a deal</span>
+          </div>
+          <div class="onboarding-step">
+            <div class="step-num" id="step3-num">3</div>
+            <span>Compare two deals</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Property Details -->
+      <div class="card" style="margin-bottom:1.5rem">
+        <div class="card-title"><i class="ti ti-map-pin"></i>Property details</div>
+        <div class="postcode-row">
+          <input type="text" class="form-input" id="postcode" placeholder="Enter postcode e.g. BR1 2EQ" style="text-transform:uppercase"/>
+          <button class="btn btn-primary" onclick="runAppraisal()" id="run-btn">
+            Run appraisal
+          </button>
+        </div>
+        <div class="input-grid-3" style="margin-bottom:12px">
+          <div>
+            <label class="form-label">Development type</label>
+            <select class="form-input" id="dev-type">
+              <option>Loft conversion</option>
+              <option selected>Flat conversion</option>
+              <option>HMO conversion</option>
+              <option>Light refurbishment</option>
+              <option>Full refurbishment</option>
+              <option>New build</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Property type</label>
+            <select class="form-input" id="prop-type">
+              <option>Terraced house</option>
+              <option selected>Semi-detached house</option>
+              <option>Detached house</option>
+              <option>Flat</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Region</label>
+            <select class="form-input" id="region">
+              <option>London</option>
+              <option selected>South East</option>
+              <option>South West</option>
+              <option>Midlands</option>
+              <option>North West</option>
+              <option>North East</option>
+              <option>Yorkshire</option>
+            </select>
+          </div>
+        </div>
+        <div class="input-grid-3">
+          <div>
+            <label class="form-label">Purchase price (£)</label>
+            <input type="number" class="form-input" id="purchase" value="320000" min="0"/>
+          </div>
+          <div>
+            <label class="form-label">Floor area (m²)</label>
+            <input type="number" class="form-input" id="floorarea" value="110" min="0"/>
+          </div>
+          <div>
+            <label class="form-label">Number of units</label>
+            <input type="number" class="form-input" id="units" value="2" min="1"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- RESULTS (hidden until run) -->
+      <div id="results" style="display:none">
+
+        <!-- Financial summary + Risk flags -->
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title"><i class="ti ti-chart-bar"></i>Financial summary</div>
+            <div class="metrics-grid">
+              <div class="metric-tile"><div class="metric-tile-label">Gross development value</div><div class="metric-tile-value" id="r-gdv">—</div></div>
+              <div class="metric-tile"><div class="metric-tile-label">Total build cost</div><div class="metric-tile-value" id="r-build">—</div></div>
+              <div class="metric-tile"><div class="metric-tile-label">SDLT</div><div class="metric-tile-value" id="r-sdlt">—</div></div>
+              <div class="metric-tile"><div class="metric-tile-label">Dev finance est.</div><div class="metric-tile-value" id="r-finance">—</div></div>
+              <div class="metric-tile"><div class="metric-tile-label">Profit</div><div class="metric-tile-value" id="r-profit">—</div></div>
+              <div class="metric-tile highlight"><div class="metric-tile-label">Profit on GDV</div><div class="metric-tile-value" id="r-margin">—</div></div>
+            </div>
+            <div class="metric-tile" style="margin-bottom:12px"><div class="metric-tile-label">Residual land value</div><div class="metric-tile-value" id="r-rlv">—</div></div>
+            <div class="metric-tile" style="margin-bottom:0"><div class="metric-tile-label">BCIS build cost range</div><div class="metric-tile-value" style="font-size:16px" id="r-bcis">—</div></div>
+            <div id="verdict-box" class="verdict viable" style="margin-top:12px">
+              <i class="ti ti-circle-check" id="verdict-icon"></i>
+              <div>
+                <div class="verdict-title" id="verdict-title">Viable</div>
+                <div class="verdict-desc" id="verdict-desc">Profit margin exceeds 20% threshold</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title"><i class="ti ti-shield-check"></i>Risk &amp; planning flags</div>
+            <ul class="risk-list" id="risk-list">
+              <li class="risk-item"><span>Flood zone</span><span class="flag flag-safe" id="flag-flood">Zone 1 — low risk</span></li>
+              <li class="risk-item"><span>Article 4 direction</span><span class="flag flag-safe" id="flag-a4">Not applicable</span></li>
+              <li class="risk-item"><span>Conservation area</span><span class="flag flag-warn" id="flag-conservation">Checking…</span></li>
+              <li class="risk-item"><span>Planning — nearby approvals</span><span class="flag flag-safe" id="flag-planning">4 of 5 approved</span></li>
+              <li class="risk-item"><span>Planning — recent refusals</span><span class="flag flag-warn" id="flag-refusals">1 refusal (2024)</span></li>
+              <li class="risk-item" style="border-bottom:none"><span>EPC rating</span><span class="flag flag-safe" id="flag-epc">D — typical</span></li>
+            </ul>
+            <div class="price-growth-bar">
+              <i class="ti ti-trending-up" style="color:var(--green);flex-shrink:0"></i>
+              <div class="growth-track"><div class="growth-fill" id="growth-fill" style="width:62%"></div></div>
+              <span style="font-size:13px">5yr avg: <strong style="color:var(--green)" id="growth-pct">+6.2% p/a</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- SDLT Breakdown -->
+        <div class="card" style="margin-bottom:1.5rem">
+          <div class="card-title"><i class="ti ti-receipt"></i>SDLT breakdown</div>
+          <div class="sdlt-grid">
+            <div class="metric-tile"><div class="metric-tile-label">£0–£250k @ 3%</div><div class="metric-tile-value" style="font-size:17px" id="s1">—</div></div>
+            <div class="metric-tile"><div class="metric-tile-label">£250k–£925k @ 8%</div><div class="metric-tile-value" style="font-size:17px" id="s2">—</div></div>
+            <div class="metric-tile"><div class="metric-tile-label">Additional dwelling (3%)</div><div class="metric-tile-value" style="font-size:17px" id="s3">—</div></div>
+            <div class="metric-tile highlight"><div class="metric-tile-label">Total SDLT</div><div class="metric-tile-value" style="font-size:17px" id="s-total">—</div></div>
+          </div>
+        </div>
+
+        <!-- Deal Resilience -->
+        <div class="card" style="margin-bottom:1.5rem">
+          <div class="card-title"><i class="ti ti-shield-half"></i>Deal resilience</div>
+          <div class="resilience-summary good" id="resilience-box">
+            <i class="ti ti-circle-check" id="resilience-icon"></i>
+            <div>
+              <div class="resilience-headline" id="resilience-headline">This deal has good headroom — it can absorb some bad luck.</div>
+              <div class="resilience-detail" id="resilience-detail">It stays viable if build costs run up to +10% over budget and sale prices come in up to -10% below expectation simultaneously.</div>
+            </div>
+          </div>
+          <div class="headroom-grid">
+            <div class="headroom-card">
+              <div class="headroom-label">Build cost headroom before deal fails</div>
+              <div class="headroom-track"><div class="headroom-fill" id="build-headroom-bar" style="width:60%"></div></div>
+              <div class="headroom-val" id="build-headroom-val">Up to +20% overrun — still viable</div>
+            </div>
+            <div class="headroom-card">
+              <div class="headroom-label">GDV headroom before deal fails</div>
+              <div class="headroom-track"><div class="headroom-fill" id="gdv-headroom-bar" style="width:40%"></div></div>
+              <div class="headroom-val" id="gdv-headroom-val">Down to -10% on sales — still viable</div>
+            </div>
+          </div>
+          <button class="detail-toggle" onclick="toggleSens()" id="sens-toggle">
+            <i class="ti ti-chevron-down" id="sens-icon"></i>Show full sensitivity table
+          </button>
+          <div id="sens-wrap" style="display:none">
+            <div style="overflow-x:auto">
+              <table class="sens-table">
+                <thead>
+                  <tr>
+                    <th style="text-align:left">Build \ GDV</th>
+                    <th>-20%</th><th>-10%</th><th>Base</th><th>+10%</th><th>+20%</th>
+                  </tr>
+                </thead>
+                <tbody id="sens-body"></tbody>
+              </table>
+            </div>
+            <div class="sens-legend">
+              <div class="legend-item"><div class="legend-dot" style="background:var(--green-light);border:1px solid #9FE1CB"></div>Viable — above 20%</div>
+              <div class="legend-item"><div class="legend-dot" style="background:var(--amber-light);border:1px solid #FAC775"></div>Marginal — 12–20%</div>
+              <div class="legend-item"><div class="legend-dot" style="background:var(--red-light);border:1px solid #F7C1C1"></div>Not viable — below 12%</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Area Snapshot -->
+        <div class="card" style="margin-bottom:1.5rem" id="area-snapshot">
+          <div class="card-title">
+            <i class="ti ti-map-2"></i>Area snapshot
+            <span style="font-size:12px;font-weight:400;color:var(--text-secondary);margin-left:auto;background:var(--bg-secondary);padding:3px 8px;border-radius:20px" id="snapshot-postcode">BR1</span>
+          </div>
+          <div class="metrics-grid-4" style="margin-bottom:1.25rem">
+            <div class="metric-tile"><div class="metric-tile-label">Avg sold price</div><div class="metric-tile-value" style="font-size:18px" id="snap-avg">£487k</div><div class="metric-tile-sub">Last 12 months</div></div>
+            <div class="metric-tile"><div class="metric-tile-label">Transactions</div><div class="metric-tile-value" style="font-size:18px" id="snap-tx">312</div><div class="metric-tile-sub">Last 12 months</div></div>
+            <div class="metric-tile"><div class="metric-tile-label">5yr price growth</div><div class="metric-tile-value" style="font-size:18px;color:var(--green)" id="snap-growth">+6.2%</div><div class="metric-tile-sub">Annual average</div></div>
+            <div class="metric-tile"><div class="metric-tile-label">Avg days on market</div><div class="metric-tile-value" style="font-size:18px" id="snap-dom">34</div><div class="metric-tile-sub">Current estimate</div></div>
+          </div>
+          <div class="hr"></div>
+          <div class="card-title" style="margin-bottom:1rem"><i class="ti ti-chart-bar" style="font-size:15px"></i>Average sold price — 5 years</div>
+          <div id="price-bars"></div>
+          <div class="hr"></div>
+          <div class="card-title" style="margin-bottom:1rem"><i class="ti ti-home" style="font-size:15px"></i>Average price by property type</div>
+          <div class="type-grid" id="type-grid"></div>
+          <div class="source-note"><i class="ti ti-database" style="font-size:12px"></i>HM Land Registry Price Paid Data — updated monthly</div>
+        </div>
+
+      </div><!-- /results -->
+    </div>
+  </div>
+
+  <!-- SAVED DEALS PAGE -->
+  <div class="page" id="page-saved">
+    <div class="page-wrap">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Saved deals</div>
+          <div class="page-subtitle" id="saved-subtitle">Your deal pipeline</div>
+        </div>
+        <button class="btn btn-primary" onclick="showPage('appraisal', document.getElementById('tab-appraisal'))">
+          <i class="ti ti-plus"></i>New appraisal
+        </button>
+      </div>
+      <div id="saved-list"></div>
+    </div>
+  </div>
+
+  <!-- COMPARE PAGE -->
+  <div class="page" id="page-compare">
+    <div class="page-wrap">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Deal comparison</div>
+          <div class="page-subtitle">Side-by-side analysis of two saved appraisals</div>
+        </div>
+      </div>
+      <div id="compare-content"></div>
+    </div>
+  </div>
+
+  <!-- ACCOUNT PAGE -->
+  <div class="page" id="page-account">
+    <div class="page-wrap" style="max-width:680px">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Account</div>
+          <div class="page-subtitle">Manage your subscription and preferences</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:1.5rem">
+        <div class="account-section-title">Your plan</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+          <div>
+            <div style="font-size:16px;font-weight:600" id="account-plan-name">Professional — Free Trial</div>
+            <div style="font-size:13px;color:var(--text-secondary);margin-top:3px" id="account-plan-desc">14 days remaining in your trial</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openUpgrade()">Upgrade now</button>
+        </div>
+        <div style="font-size:13px;color:var(--text-secondary)">
+          Questions about billing? Email us at <a href="mailto:hello@avalor.co.uk" style="color:var(--green)">hello@avalor.co.uk</a>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:1.5rem">
+        <div class="account-section-title">Profile</div>
+        <div class="form-group">
+          <label class="form-label">Full name</label>
+          <input type="text" class="form-input" id="account-name" placeholder="Your name"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email address</label>
+          <input type="email" class="form-input" id="account-email" disabled style="opacity:0.6"/>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="updateProfile()">Save changes</button>
+      </div>
+
+      <div class="card" style="margin-bottom:1.5rem">
+        <div class="account-section-title">Change password</div>
+        <div class="form-group">
+          <label class="form-label">New password</label>
+          <input type="password" class="form-input" id="new-password" placeholder="At least 8 characters"/>
+        </div>
+        <button class="btn btn-sm" onclick="updatePassword()">Update password</button>
+      </div>
+
+      <div class="card">
+        <div class="account-section-title">Support</div>
+        <div style="font-size:14px;color:var(--text-secondary);margin-bottom:1rem">Having issues or questions? We're here to help.</div>
+        <a href="mailto:hello@avalor.co.uk" class="btn btn-sm"><i class="ti ti-mail"></i>Email support</a>
+      </div>
+
+      <div style="margin-top:1.5rem;text-align:right">
+        <button class="btn btn-sm" onclick="handleLogout()" style="color:var(--text-secondary)">
+          <i class="ti ti-logout"></i>Sign out
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- UPGRADE MODAL -->
+<div class="modal-backdrop" id="upgrade-modal" onclick="closeUpgradeOutside(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeUpgrade()"><i class="ti ti-x"></i></button>
+    <div class="modal-title">Upgrade Avalor</div>
+    <div class="modal-sub">Your 14-day trial ends soon. Choose a plan to keep full access.</div>
+    <div class="upgrade-grid">
+      <div class="upgrade-card">
+        <div class="upgrade-plan-name">Essential</div>
+        <div class="upgrade-price">£49<span>/month</span></div>
+        <ul class="upgrade-features">
+          <li><i class="ti ti-check"></i>Full development appraisal</li>
+          <li><i class="ti ti-check"></i>GDV, SDLT &amp; sensitivity</li>
+          <li><i class="ti ti-check"></i>Risk &amp; planning flags</li>
+          <li><i class="ti ti-check"></i>Area snapshot &amp; price data</li>
+          <li><i class="ti ti-check"></i>Deal resilience analysis</li>
+          <li class="muted"><i class="ti ti-x"></i>Saved appraisals</li>
+          <li class="muted"><i class="ti ti-x"></i>Deal comparison</li>
+          <li class="muted"><i class="ti ti-x"></i>PDF export</li>
+        </ul>
+        <button class="btn btn-full" onclick="toast('Redirecting to checkout…')">Choose Essential</button>
+      </div>
+      <div class="upgrade-card featured">
+        <div class="popular-badge">Most popular</div>
+        <div class="upgrade-plan-name">Professional</div>
+        <div class="upgrade-price">£69<span>/month</span></div>
+        <ul class="upgrade-features">
+          <li><i class="ti ti-check"></i>Everything in Essential</li>
+          <li><i class="ti ti-check"></i>Unlimited saved appraisals</li>
+          <li><i class="ti ti-check"></i>Deal comparison</li>
+          <li><i class="ti ti-check"></i>PDF export &amp; sharing</li>
+          <li><i class="ti ti-check"></i>Residual land value</li>
+          <li><i class="ti ti-check"></i>Dev finance estimator</li>
+          <li><i class="ti ti-check"></i>Agent &amp; professional fees</li>
+          <li><i class="ti ti-check"></i>Priority email support</li>
+        </ul>
+        <button class="btn btn-primary btn-full" onclick="toast('Redirecting to checkout…')">Choose Professional</button>
+      </div>
+    </div>
+    <div class="modal-footer"><i class="ti ti-lock"></i>Secure payment via Stripe. Cancel anytime.</div>
+  </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<!-- SCRIPTS -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase.js"></script>
+<script src="js/appraisal.js"></script>
+<script src="js/deals.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
