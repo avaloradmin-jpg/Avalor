@@ -84,21 +84,11 @@ async function handleSignup() {
     return;
   }
 
-  // Store profile in users table
-  if (data.user) {
-    await sb.from('profiles').upsert({
-      id: data.user.id,
-      full_name: name,
-      email: email,
-      role: role,
-      plan: 'trial',
-      trial_started_at: new Date().toISOString()
-    });
-
-    currentUser = data.user;
-    launchApp();
+  if (data.session) {
+    // No email confirmation required — session is live, onAuthStateChange will fire SIGNED_IN
+    // and handle profile creation there. Nothing more to do here.
   } else {
-    // Email confirmation required
+    // Email confirmation required — profile will be created in onAuthStateChange after confirmation
     successEl.textContent = 'Account created! Check your email to confirm your address, then sign in.';
     successEl.style.display = 'block';
     btn.innerHTML = 'Create account — it\'s free';
@@ -125,9 +115,22 @@ async function init() {
     showAuth('login');
   }
 
-  sb.auth.onAuthStateChange((event, session) => {
+  sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN' && session?.user) {
       currentUser = session.user;
+
+      // Ensure profile exists — covers the post-email-confirmation path where the
+      // profile insert at signup was blocked by RLS (no session at that point).
+      const meta = session.user.user_metadata || {};
+      await sb.from('profiles').upsert({
+        id: session.user.id,
+        full_name: meta.full_name || '',
+        email: session.user.email || '',
+        role: meta.role || '',
+        plan: 'trial',
+        trial_started_at: new Date().toISOString()
+      }, { onConflict: 'id', ignoreDuplicates: true });
+
       launchApp();
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
