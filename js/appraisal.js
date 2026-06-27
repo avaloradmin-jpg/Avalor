@@ -84,6 +84,7 @@ async function fetchEpcData(addresses) {
   throw new Error('No EPC data found for properties in this postcode');
 }
 
+const PLANWIRE_PROXY = '/api/planwire';
 const FLOOD_LABEL_RANK = { 'Very High': 4, 'High': 3, 'Medium': 2, 'Low': 1 };
 
 async function fetchFloodRisk(uprn) {
@@ -93,6 +94,37 @@ async function fetchFloodRisk(uprn) {
   if (!resp.ok) throw new Error('Flood risk lookup failed: ' + resp.status);
   const data = await resp.json();
   return data.results ?? [];
+}
+
+async function fetchPlanwireData(lat, lng) {
+  const url = `${PLANWIRE_PROXY}/v1/applications/nearby?lat=${lat}&lng=${lng}&radius_km=0.5&limit=10`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  if (!resp.ok) throw new Error('PlanWire API error ' + resp.status);
+  const data = await resp.json();
+  const apps = data.data ?? [];
+
+  const twoYearsAgo = new Date();
+  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+
+  const recent = apps.filter(a => {
+    const d = a.applicationDate ? new Date(a.applicationDate) : null;
+    return d && d >= twoYearsAgo;
+  });
+
+  const decided = recent.filter(a => a.decision);
+  const refused = decided.filter(a => /refus/i.test(a.decision));
+  const granted = decided.filter(a => /grant|permit|approv|agreed/i.test(a.decision));
+
+  const mostRecentRefusal = refused
+    .map(a => new Date(a.applicationDate))
+    .sort((a, b) => b - a)[0];
+
+  return {
+    total: decided.length,
+    granted: granted.length,
+    refused: refused.length,
+    mostRecentRefusalYear: mostRecentRefusal ? mostRecentRefusal.getFullYear() : null
+  };
 }
 
 function worstFloodLabel(results) {
@@ -137,7 +169,7 @@ async function fetchLandRegistryComps(postcode, devType) {
     ? transactions.filter(t => t.type === typeFilter)
     : transactions;
 
-  return { transactions: filtered, district };
+  return { transactions: filtered, district, lat: pcData.result.latitude, lng: pcData.result.longitude };
 }
 
 function median(arr) {
@@ -225,6 +257,7 @@ async function runAppraisal() {
   let fallbackReason = '';
   let epcResult = null;
   let floodResults = null;
+  let planwireResult = null;
 
   // Land Registry and Homedata address lookup run in parallel
   const [lrOutcome, addrOutcome] = await Promise.allSettled([
@@ -240,17 +273,20 @@ async function runAppraisal() {
     fallbackReason = 'The Land Registry API could not be reached. GDV and area statistics are based on regional averages, not live market data.';
   }
 
-  // EPC and flood fire in parallel once we have addresses
-  if (addrOutcome.status === 'fulfilled') {
-    const addresses = addrOutcome.value;
-    const uprn = addresses[0]?.uprn;
-    const [epcOutcome, floodOutcome] = await Promise.allSettled([
-      fetchEpcData(addresses),
-      uprn ? fetchFloodRisk(uprn) : Promise.reject('No UPRN')
-    ]);
-    if (epcOutcome.status === 'fulfilled') epcResult = epcOutcome.value;
-    if (floodOutcome.status === 'fulfilled') floodResults = floodOutcome.value;
-  }
+  // EPC, flood, and PlanWire all fire in parallel
+  const addresses = addrOutcome.status === 'fulfilled' ? addrOutcome.value : [];
+  const uprn = addresses[0]?.uprn;
+  const lrCoords = lrOutcome.status === 'fulfilled' ? lrOutcome.value : null;
+
+  const [epcOutcome, floodOutcome, planwireOutcome] = await Promise.allSettled([
+    addresses.length ? fetchEpcData(addresses) : Promise.reject('No addresses'),
+    uprn ? fetchFloodRisk(uprn) : Promise.reject('No UPRN'),
+    lrCoords ? fetchPlanwireData(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords')
+  ]);
+
+  if (epcOutcome.status === 'fulfilled') epcResult = epcOutcome.value;
+  if (floodOutcome.status === 'fulfilled') floodResults = floodOutcome.value;
+  if (planwireOutcome.status === 'fulfilled') planwireResult = planwireOutcome.value;
 
   // Split into last 12 months and prior 12 months for YoY growth
   const now = new Date();
@@ -357,7 +393,7 @@ async function runAppraisal() {
 
   buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin);
   buildSensTable(gdv, buildMid, purchase, sdlt, finance);
-  buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult, floodResults);
+  buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult, floodResults, planwireResult);
 
   const growthWidth = Math.min(90, Math.max(10, (Math.abs(growth) / 10) * 100));
   document.getElementById('growth-fill').style.width = growthWidth + '%';
@@ -447,7 +483,7 @@ function buildSensTable(gdv, buildMid, purchase, sdlt, finance) {
   document.getElementById('sens-body').innerHTML = html;
 }
 
-function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback, epcResult, floodResults) {
+function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback, epcResult, floodResults, planwireResult) {
   const areaLabel = district || postcode.split(' ')[0];
   document.getElementById('snapshot-postcode').textContent = areaLabel;
 
@@ -503,6 +539,39 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
         // High or Very High
         floodEl.className = 'flag flag-risk';
         floodEl.textContent = `Zone 3 — ${worst.toLowerCase()} risk`;
+      }
+    }
+  }
+
+  // Planning flags
+  const planningEl = document.getElementById('flag-planning');
+  const refusalsEl = document.getElementById('flag-refusals');
+  if (planningEl && refusalsEl) {
+    if (!planwireResult) {
+      planningEl.className = 'flag flag-warn';
+      planningEl.textContent = 'Not available';
+      refusalsEl.className = 'flag flag-warn';
+      refusalsEl.textContent = 'Not available';
+    } else {
+      const { total, granted, refused, mostRecentRefusalYear } = planwireResult;
+      if (total === 0) {
+        planningEl.className = 'flag flag-safe';
+        planningEl.textContent = 'No decisions nearby';
+        refusalsEl.className = 'flag flag-safe';
+        refusalsEl.textContent = 'None found';
+      } else {
+        const approvalRate = granted / total;
+        planningEl.className = approvalRate >= 0.7 ? 'flag flag-safe' : approvalRate >= 0.4 ? 'flag flag-warn' : 'flag flag-risk';
+        planningEl.textContent = `${granted} of ${total} approved`;
+        if (refused === 0) {
+          refusalsEl.className = 'flag flag-safe';
+          refusalsEl.textContent = 'None in last 2 years';
+        } else {
+          refusalsEl.className = refused >= 2 ? 'flag flag-risk' : 'flag flag-warn';
+          refusalsEl.textContent = mostRecentRefusalYear
+            ? `${refused} refusal${refused > 1 ? 's' : ''} (${mostRecentRefusalYear})`
+            : `${refused} refusal${refused > 1 ? 's' : ''}`;
+        }
       }
     }
   }

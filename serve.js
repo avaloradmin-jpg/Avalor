@@ -18,12 +18,33 @@ try {
 const HOMEDATA_KEY = ENV.HOMEDATA_API_KEY || '';
 const HOMEDATA_BASE = 'api.homedata.co.uk';
 
+const PLANWIRE_KEY = ENV.PLANWIRE_API_KEY || '';
+const PLANWIRE_BASE = 'api.planwire.io';
+
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript',
   '.css': 'text/css', '.json': 'application/json',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff'
 };
+
+function proxyRequest(req, res, hostname, upstreamPath, extraHeaders) {
+  const options = {
+    hostname,
+    path: upstreamPath,
+    method: req.method,
+    headers: { 'Accept': 'application/json', ...extraHeaders }
+  };
+  const proxy = https.request(options, upstreamRes => {
+    res.writeHead(upstreamRes.statusCode, {
+      'Content-Type': upstreamRes.headers['content-type'] || 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    });
+    upstreamRes.pipe(res);
+  });
+  proxy.on('error', err => { res.writeHead(502); res.end(JSON.stringify({ error: err.message })); });
+  req.pipe(proxy);
+}
 
 function proxyHomedata(req, res) {
   const upstreamPath = req.url.replace('/api/homedata', '');
@@ -37,25 +58,16 @@ function proxyHomedata(req, res) {
     }
   };
 
-  const proxy = https.request(options, upstreamRes => {
-    res.writeHead(upstreamRes.statusCode, {
-      'Content-Type': upstreamRes.headers['content-type'] || 'application/json',
-      'Access-Control-Allow-Origin': '*'
-    });
-    upstreamRes.pipe(res);
-  });
-
-  proxy.on('error', err => {
-    res.writeHead(502);
-    res.end(JSON.stringify({ error: err.message }));
-  });
-
-  req.pipe(proxy);
+  proxyRequest(req, res, HOMEDATA_BASE, upstreamPath, { 'Authorization': `Api-Key ${HOMEDATA_KEY}` });
 }
 
 http.createServer((req, res) => {
   if (req.url.startsWith('/api/homedata/')) {
     return proxyHomedata(req, res);
+  }
+  if (req.url.startsWith('/api/planwire/')) {
+    const upstreamPath = req.url.replace('/api/planwire', '');
+    return proxyRequest(req, res, PLANWIRE_BASE, upstreamPath, { 'X-API-Key': PLANWIRE_KEY });
   }
 
   let filePath = path.join(ROOT, req.url === '/' ? '/index.html' : req.url);
