@@ -42,6 +42,51 @@ const DEV_TYPE_TO_PPD_TYPE = {
 
 const PPD_API = 'https://landregistry.data.gov.uk/data/ppi/transaction-record.json';
 const POSTCODES_API = 'https://api.postcodes.io/postcodes/';
+const HOMEDATA_PROXY = '/api/homedata';
+
+function epcScoreToBand(score) {
+  if (score == null) return null;
+  if (score >= 92) return 'A';
+  if (score >= 81) return 'B';
+  if (score >= 69) return 'C';
+  if (score >= 55) return 'D';
+  if (score >= 39) return 'E';
+  if (score >= 21) return 'F';
+  return 'G';
+}
+
+async function fetchEpcData(postcode) {
+  const pcClean = postcode.replace(/\s+/g, '').toUpperCase();
+
+  // Resolve postcode to a list of UPRNs
+  const addrResp = await fetch(`${HOMEDATA_PROXY}/address/postcode/${pcClean}/`, {
+    signal: AbortSignal.timeout(6000)
+  });
+  if (!addrResp.ok) throw new Error('Homedata postcode lookup failed: ' + addrResp.status);
+  const addrData = await addrResp.json();
+
+  const addresses = Array.isArray(addrData) ? addrData : (addrData.addresses ?? addrData.results ?? []);
+  if (!addresses.length) throw new Error('No addresses found for postcode');
+
+  // Try up to 5 UPRNs — not every property has EPC data
+  for (const addr of addresses.slice(0, 5)) {
+    const uprn = addr.uprn;
+    if (!uprn) continue;
+
+    const epcResp = await fetch(`${HOMEDATA_PROXY}/epc-checker/${uprn}/`, {
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!epcResp.ok) continue;
+    const epcData = await epcResp.json();
+
+    const score = epcData.current_energy_efficiency ?? null;
+    if (score == null) continue;
+
+    return { band: epcScoreToBand(score), score };
+  }
+
+  throw new Error('No EPC data found for properties in this postcode');
+}
 
 async function fetchLandRegistryComps(postcode, devType) {
   // Step 1: resolve postcode to district
@@ -163,14 +208,23 @@ async function runAppraisal() {
   let district = '';
   let usedFallback = false;
   let fallbackReason = '';
+  let epcResult = null;
 
-  try {
-    const result = await fetchLandRegistryComps(postcode, devType);
-    comps = result.transactions;
-    district = result.district;
-  } catch (e) {
+  const [lrResult, epcOutcome] = await Promise.allSettled([
+    fetchLandRegistryComps(postcode, devType),
+    fetchEpcData(postcode)
+  ]);
+
+  if (lrResult.status === 'fulfilled') {
+    comps = lrResult.value.transactions;
+    district = lrResult.value.district;
+  } else {
     usedFallback = true;
     fallbackReason = 'The Land Registry API could not be reached. GDV and area statistics are based on regional averages, not live market data.';
+  }
+
+  if (epcOutcome.status === 'fulfilled') {
+    epcResult = epcOutcome.value;
   }
 
   // Split into last 12 months and prior 12 months for YoY growth
@@ -278,7 +332,7 @@ async function runAppraisal() {
 
   buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin);
   buildSensTable(gdv, buildMid, purchase, sdlt, finance);
-  buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback);
+  buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult);
 
   const growthWidth = Math.min(90, Math.max(10, (Math.abs(growth) / 10) * 100));
   document.getElementById('growth-fill').style.width = growthWidth + '%';
@@ -368,7 +422,7 @@ function buildSensTable(gdv, buildMid, purchase, sdlt, finance) {
   document.getElementById('sens-body').innerHTML = html;
 }
 
-function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback) {
+function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback, epcResult) {
   const areaLabel = district || postcode.split(' ')[0];
   document.getElementById('snapshot-postcode').textContent = areaLabel;
 
@@ -384,6 +438,23 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
   if (txTile) {
     const sub = txTile.querySelector('.metric-tile-sub');
     if (sub) sub.textContent = usedFallback ? 'No live data' : 'Last 12 months';
+  }
+
+  // EPC flag
+  const epcEl = document.getElementById('flag-epc');
+  if (epcEl) {
+    if (epcResult && epcResult.band) {
+      const band = epcResult.band.toUpperCase();
+      const score = epcResult.score ? ` (${epcResult.score})` : '';
+      const cls = 'AB'.includes(band) ? 'flag flag-safe'
+                : 'CD'.includes(band) ? 'flag flag-warn'
+                : 'flag flag-risk';
+      epcEl.className = cls;
+      epcEl.textContent = `${band}${score} — sample property`;
+    } else {
+      epcEl.className = 'flag flag-warn';
+      epcEl.textContent = 'Not available';
+    }
   }
 
   // 5-year price bars using growth rate
