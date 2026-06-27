@@ -9,7 +9,8 @@ const BCIS = {
   'New build':            { low: 1800, mid: 2400, high: 3200 }
 };
 
-const PRICE_PER_SQM = {
+// Regional fallback prices (£/sqm) — used when Land Registry returns < 5 comps
+const PRICE_PER_SQM_FALLBACK = {
   'London':     6500,
   'South East': 4200,
   'South West': 3600,
@@ -19,8 +20,7 @@ const PRICE_PER_SQM = {
   'Yorkshire':  2500
 };
 
-// Land Registry historic price growth by region (approximate annualised 5yr)
-const PRICE_GROWTH = {
+const PRICE_GROWTH_FALLBACK = {
   'London':     5.8,
   'South East': 6.2,
   'South West': 5.9,
@@ -29,6 +29,63 @@ const PRICE_GROWTH = {
   'North East': 5.4,
   'Yorkshire':  6.5
 };
+
+// End-product property type for each dev type — used to filter comps
+const DEV_TYPE_TO_PPD_TYPE = {
+  'Flat conversion':     'flat-maisonette',
+  'Loft conversion':     'flat-maisonette',
+  'HMO conversion':      'flat-maisonette',
+  'Light refurbishment': null,
+  'Full refurbishment':  null,
+  'New build':           null
+};
+
+const PPD_API = 'https://landregistry.data.gov.uk/data/ppi/transaction-record.json';
+const POSTCODES_API = 'https://api.postcodes.io/postcodes/';
+
+async function fetchLandRegistryComps(postcode, devType) {
+  // Step 1: resolve postcode to district
+  const pcClean = postcode.replace(/\s+/g, '');
+  const pcResp = await fetch(POSTCODES_API + pcClean, { signal: AbortSignal.timeout(5000) });
+  if (!pcResp.ok) throw new Error('Postcode lookup failed');
+  const pcData = await pcResp.json();
+  const district = pcData.result?.admin_district?.toUpperCase();
+  if (!district) throw new Error('Could not resolve district for ' + postcode);
+
+  // Step 2: fetch 24 months of PPD data for the district (allows YoY comparison)
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - 24);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const url = `${PPD_API}?propertyAddress.district=${encodeURIComponent(district)}&min-transactionDate=${cutoffStr}&_pageSize=100&_sort=-transactionDate`;
+  const ppdResp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  if (!ppdResp.ok) throw new Error('PPD API error ' + ppdResp.status);
+  const ppdData = await ppdResp.json();
+
+  const allItems = ppdData.result?.items ?? [];
+
+  // Parse each record
+  const transactions = allItems.map(item => ({
+    price: item.pricePaid,
+    date: new Date(item.transactionDate),
+    type: item.propertyType?.prefLabel?.[0]?._value ?? ''
+  })).filter(t => t.price > 0 && !isNaN(t.date));
+
+  // Filter by end-product property type
+  const typeFilter = DEV_TYPE_TO_PPD_TYPE[devType];
+  const filtered = typeFilter
+    ? transactions.filter(t => t.type === typeFilter)
+    : transactions;
+
+  return { transactions: filtered, district };
+}
+
+function median(arr) {
+  if (!arr.length) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
 
 function calcSDLT(price) {
   let sdlt = 0;
@@ -46,8 +103,7 @@ function calcSDLT(price) {
     remaining -= chunk;
     if (remaining <= 0) break;
   }
-  // Additional dwelling surcharge (3%)
-  sdlt += price * 0.03;
+  sdlt += price * 0.03; // Additional dwelling surcharge
   return Math.round(sdlt);
 }
 
@@ -70,9 +126,19 @@ function getMargin(gdv, buildMid, purchase, sdlt, finance, gdvVar, buildVar) {
   return (profit / g) * 100;
 }
 
+function showDataBanner(msg) {
+  const el = document.getElementById('data-banner');
+  el.style.display = 'flex';
+  if (msg) document.getElementById('data-banner-msg').textContent = msg;
+}
+
+function hideDataBanner() {
+  document.getElementById('data-banner').style.display = 'none';
+}
+
 let currentAppraisal = null;
 
-function runAppraisal() {
+async function runAppraisal() {
   const postcode = document.getElementById('postcode').value.trim().toUpperCase();
   const devType = document.getElementById('dev-type').value;
   const region = document.getElementById('region').value;
@@ -89,126 +155,153 @@ function runAppraisal() {
   btn.innerHTML = '<span class="loading-spinner"></span> Running…';
   btn.disabled = true;
 
-  setTimeout(() => {
-    btn.innerHTML = 'Run appraisal';
-    btn.disabled = false;
+  const bcis = BCIS[devType] || BCIS['Flat conversion'];
+  const fallbackPpm = PRICE_PER_SQM_FALLBACK[region] || 4200;
+  const fallbackGrowth = PRICE_GROWTH_FALLBACK[region] || 6.0;
 
-    const bcis = BCIS[devType] || BCIS['Flat conversion'];
-    const ppm = PRICE_PER_SQM[region] || 4200;
-    const growth = PRICE_GROWTH[region] || 6.0;
+  let comps = [];
+  let district = '';
+  let usedFallback = false;
+  let fallbackReason = '';
 
-    const gdv = area * ppm * units * 0.85;
-    const buildMid = area * bcis.mid;
-    const sdlt = calcSDLT(purchase);
-    const agentFees = gdv * 0.015;
-    const profFees = buildMid * 0.12;
-    const contingency = buildMid * 0.10;
-    const finance = (purchase + buildMid) * 0.065;
-    const totalCosts = purchase + buildMid + sdlt + agentFees + profFees + contingency + finance;
-    const profit = gdv - totalCosts;
-    const margin = (profit / gdv) * 100;
-    const rlv = gdv - buildMid - (gdv * 0.20) - agentFees - profFees;
+  try {
+    const result = await fetchLandRegistryComps(postcode, devType);
+    comps = result.transactions;
+    district = result.district;
+  } catch (e) {
+    usedFallback = true;
+    fallbackReason = 'The Land Registry API could not be reached. GDV and area statistics are based on regional averages, not live market data.';
+  }
 
-    // Store for saving
-    currentAppraisal = {
-      postcode, devType, region, purchase, area, units,
-      gdv, buildMid, sdlt, finance, profit, margin, rlv,
-      bcis, growth, ppm
-    };
+  // Split into last 12 months and prior 12 months for YoY growth
+  const now = new Date();
+  const twelveMonthsAgo = new Date(now); twelveMonthsAgo.setFullYear(now.getFullYear() - 1);
+  const last12 = comps.filter(t => t.date >= twelveMonthsAgo);
+  const prior12 = comps.filter(t => t.date < twelveMonthsAgo);
 
-    // Populate financials
-    document.getElementById('r-gdv').textContent = fmt(gdv);
-    document.getElementById('r-build').textContent = fmt(buildMid);
-    document.getElementById('r-sdlt').textContent = fmt(sdlt);
-    document.getElementById('r-finance').textContent = fmt(finance);
-    document.getElementById('r-profit').textContent = fmt(profit);
-    document.getElementById('r-margin').textContent = fmtPct(margin);
-    document.getElementById('r-rlv').textContent = fmt(rlv);
-    document.getElementById('r-bcis').textContent = `£${bcis.low.toLocaleString()} – £${bcis.high.toLocaleString()}/m²`;
+  // Require at least 5 comps in the last 12 months to trust the data
+  if (!usedFallback && last12.length < 5) {
+    usedFallback = true;
+    const label = district || postcode.split(' ')[0];
+    fallbackReason = `Only ${last12.length} sold comparable${last12.length === 1 ? '' : 's'} found in ${label} for the last 12 months. GDV and area statistics are based on regional averages, not live market data.`;
+  }
 
-    // SDLT breakdown
-    const s1 = Math.min(purchase, 125000) * 0.00 + Math.max(0, Math.min(purchase, 250000) - 125000) * 0.00;
-    const s1b = Math.min(purchase, 250000) * 0.03;
-    const s2b = Math.max(0, Math.min(purchase, 925000) - 250000) * 0.08;
-    const s3b = purchase * 0.03;
-    document.getElementById('s1').textContent = fmt(Math.min(purchase, 250000) * 0.00 + s1b - (Math.min(purchase, 250000) * 0.03 - s1b));
+  // --- Derive key figures ---
+  let medianPrice, growth;
 
-    // Simplified SDLT display
-    const band1 = Math.min(purchase, 250000) * 0.03;
-    const band2 = Math.max(0, Math.min(purchase, 925000) - 250000) * 0.08;
-    const band3 = Math.max(0, Math.min(purchase, 1500000) - 925000) * 0.13;
-    const addl = purchase * 0.03;
-    document.getElementById('s1').textContent = fmt(band1);
-    document.getElementById('s2').textContent = fmt(band2);
-    document.getElementById('s3').textContent = fmt(addl);
-    document.getElementById('s-total').textContent = fmt(sdlt);
-
-    // Verdict
-    const verdictBox = document.getElementById('verdict-box');
-    const verdictIcon = document.getElementById('verdict-icon');
-    const verdictTitle = document.getElementById('verdict-title');
-    const verdictDesc = document.getElementById('verdict-desc');
-    const marginEl = document.getElementById('r-margin');
-
-    if (margin >= 20) {
-      verdictBox.className = 'verdict viable';
-      verdictIcon.className = 'ti ti-circle-check';
-      verdictTitle.textContent = 'Viable';
-      verdictDesc.textContent = 'Profit margin exceeds 20% threshold — deal stacks up at current assumptions.';
-      marginEl.style.color = 'var(--green)';
-    } else if (margin >= 12) {
-      verdictBox.className = 'verdict marginal';
-      verdictIcon.className = 'ti ti-alert-triangle';
-      verdictTitle.textContent = 'Marginal';
-      verdictDesc.textContent = 'Profit margin between 12–20% — review assumptions carefully before committing.';
-      marginEl.style.color = 'var(--amber)';
+  if (!usedFallback) {
+    medianPrice = median(last12.map(t => t.price));
+    if (prior12.length >= 3) {
+      const medPrior = median(prior12.map(t => t.price));
+      growth = ((medianPrice - medPrior) / medPrior) * 100;
     } else {
-      verdictBox.className = 'verdict not-viable';
-      verdictIcon.className = 'ti ti-circle-x';
-      verdictTitle.textContent = 'Not viable';
-      verdictDesc.textContent = 'Profit margin below 12% — deal unlikely to work at current purchase price.';
-      marginEl.style.color = 'var(--red)';
+      growth = fallbackGrowth;
     }
+  } else {
+    medianPrice = fallbackPpm * 90; // approx avg from £/sqm
+    growth = fallbackGrowth;
+  }
 
-    // Deal resilience
-    buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin);
+  const ppm = Math.round(medianPrice / 90);
 
-    // Sensitivity table
-    buildSensTable(gdv, buildMid, purchase, sdlt, finance);
+  // GDV: median comp × units × 0.85 (refurb discount vs new/prime)
+  const gdv = medianPrice * units * 0.85;
 
-    // Area snapshot
-    buildAreaSnapshot(postcode, region, growth, ppm, units);
+  const buildMid = area * bcis.mid;
+  const sdlt = calcSDLT(purchase);
+  const agentFees = gdv * 0.015;
+  const profFees = buildMid * 0.12;
+  const contingency = buildMid * 0.10;
+  const finance = (purchase + buildMid) * 0.065;
+  const totalCosts = purchase + buildMid + sdlt + agentFees + profFees + contingency + finance;
+  const profit = gdv - totalCosts;
+  const margin = (profit / gdv) * 100;
+  const rlv = gdv - buildMid - (gdv * 0.20) - agentFees - profFees;
 
-    // Price growth bar
-    const growthWidth = Math.min(90, Math.max(10, (growth / 10) * 100));
-    document.getElementById('growth-fill').style.width = growthWidth + '%';
-    document.getElementById('growth-pct').textContent = '+' + growth.toFixed(1) + '% p/a';
+  currentAppraisal = {
+    postcode, devType, region, purchase, area, units,
+    gdv, buildMid, sdlt, finance, profit, margin, rlv,
+    bcis, growth, ppm, compCount: last12.length, district, usedFallback
+  };
 
-    // Show results
-    document.getElementById('results').style.display = 'block';
-    document.getElementById('save-btn').style.display = 'inline-flex';
+  btn.innerHTML = 'Run appraisal';
+  btn.disabled = false;
 
-    // Mark onboarding step 1 done
-    markOnboardingStep(1);
+  // Banner
+  usedFallback ? showDataBanner(fallbackReason) : hideDataBanner();
 
-    // Scroll to results
-    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Financials
+  document.getElementById('r-gdv').textContent = fmt(gdv);
+  document.getElementById('r-build').textContent = fmt(buildMid);
+  document.getElementById('r-sdlt').textContent = fmt(sdlt);
+  document.getElementById('r-finance').textContent = fmt(finance);
+  document.getElementById('r-profit').textContent = fmt(profit);
+  document.getElementById('r-margin').textContent = fmtPct(margin);
+  document.getElementById('r-rlv').textContent = fmt(rlv);
+  document.getElementById('r-bcis').textContent = `£${bcis.low.toLocaleString()} – £${bcis.high.toLocaleString()}/m²`;
 
-  }, 800); // Simulate API call time
+  // SDLT breakdown
+  const band1 = Math.min(purchase, 250000) * 0.03;
+  const band2 = Math.max(0, Math.min(purchase, 925000) - 250000) * 0.08;
+  const addl = purchase * 0.03;
+  document.getElementById('s1').textContent = fmt(band1);
+  document.getElementById('s2').textContent = fmt(band2);
+  document.getElementById('s3').textContent = fmt(addl);
+  document.getElementById('s-total').textContent = fmt(sdlt);
+
+  // Verdict
+  const verdictBox = document.getElementById('verdict-box');
+  const verdictIcon = document.getElementById('verdict-icon');
+  const verdictTitle = document.getElementById('verdict-title');
+  const verdictDesc = document.getElementById('verdict-desc');
+  const marginEl = document.getElementById('r-margin');
+
+  if (margin >= 20) {
+    verdictBox.className = 'verdict viable';
+    verdictIcon.className = 'ti ti-circle-check';
+    verdictTitle.textContent = 'Viable';
+    verdictDesc.textContent = 'Profit margin exceeds 20% threshold — deal stacks up at current assumptions.';
+    marginEl.style.color = 'var(--green)';
+  } else if (margin >= 12) {
+    verdictBox.className = 'verdict marginal';
+    verdictIcon.className = 'ti ti-alert-triangle';
+    verdictTitle.textContent = 'Marginal';
+    verdictDesc.textContent = 'Profit margin between 12–20% — review assumptions carefully before committing.';
+    marginEl.style.color = 'var(--amber)';
+  } else {
+    verdictBox.className = 'verdict not-viable';
+    verdictIcon.className = 'ti ti-circle-x';
+    verdictTitle.textContent = 'Not viable';
+    verdictDesc.textContent = 'Profit margin below 12% — deal unlikely to work at current purchase price.';
+    marginEl.style.color = 'var(--red)';
+  }
+
+  buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin);
+  buildSensTable(gdv, buildMid, purchase, sdlt, finance);
+  buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback);
+
+  const growthWidth = Math.min(90, Math.max(10, (Math.abs(growth) / 10) * 100));
+  document.getElementById('growth-fill').style.width = growthWidth + '%';
+  document.getElementById('growth-pct').textContent = (growth >= 0 ? '+' : '') + growth.toFixed(1) + '% p/a';
+
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('save-btn').style.display = 'inline-flex';
+
+  markOnboardingStep(1);
+
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, baseMargin) {
   const gdvVars = [-0.20, -0.10, 0, 0.10, 0.20];
   const buildVars = [-0.20, -0.10, 0, 0.10, 0.20];
 
-  // Find max build overrun that stays viable at base GDV
   let maxBuildOverrun = -0.20;
   for (const bv of buildVars) {
     const m = getMargin(gdv, buildMid, purchase, sdlt, finance, 0, bv);
     if (m >= 12) maxBuildOverrun = bv;
   }
 
-  // Find max GDV drop that stays viable at base build
   let maxGdvDrop = 0.20;
   for (const gv of gdvVars) {
     const m = getMargin(gdv, buildMid, purchase, sdlt, finance, gv, 0);
@@ -275,24 +368,28 @@ function buildSensTable(gdv, buildMid, purchase, sdlt, finance) {
   document.getElementById('sens-body').innerHTML = html;
 }
 
-function buildAreaSnapshot(postcode, region, growth, ppm, units) {
-  const areaCode = postcode.split(' ')[0];
-  document.getElementById('snapshot-postcode').textContent = areaCode;
+function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback) {
+  const areaLabel = district || postcode.split(' ')[0];
+  document.getElementById('snapshot-postcode').textContent = areaLabel;
 
-  // Derive realistic area stats from our region data
-  const basePrice = ppm * 90; // approx avg from £/sqm
-  const tx = Math.round(150 + Math.random() * 300);
-  const dom = Math.round(25 + Math.random() * 25);
+  // Metrics tiles
+  const txCount = usedFallback ? '—' : last12Comps.length.toString();
+  document.getElementById('snap-avg').textContent = fmt(medianPrice);
+  document.getElementById('snap-tx').textContent = txCount;
+  document.getElementById('snap-growth').textContent = (growth >= 0 ? '+' : '') + growth.toFixed(1) + '%';
+  document.getElementById('snap-dom').textContent = '—';
 
-  document.getElementById('snap-avg').textContent = fmt(basePrice);
-  document.getElementById('snap-tx').textContent = tx;
-  document.getElementById('snap-growth').textContent = '+' + growth.toFixed(1) + '%';
-  document.getElementById('snap-dom').textContent = dom + ' days';
+  // Update the transactions sub-label
+  const txTile = document.getElementById('snap-tx').closest('.metric-tile');
+  if (txTile) {
+    const sub = txTile.querySelector('.metric-tile-sub');
+    if (sub) sub.textContent = usedFallback ? 'No live data' : 'Last 12 months';
+  }
 
-  // Build 5-year price bars
+  // 5-year price bars using growth rate
   const years = ['2021', '2022', '2023', '2024', '2025'];
   const annualRate = growth / 100;
-  const prices = years.map((y, i) => Math.round(basePrice * Math.pow(1 - annualRate, 4 - i)));
+  const prices = years.map((y, i) => Math.round(medianPrice * Math.pow(1 - annualRate, 4 - i)));
   const maxP = Math.max(...prices);
 
   let barsHtml = '';
@@ -312,7 +409,7 @@ function buildAreaSnapshot(postcode, region, growth, ppm, units) {
   });
   document.getElementById('price-bars').innerHTML = barsHtml;
 
-  // Property type breakdown
+  // Property type breakdown (relative multiples from median — PPD REST doesn't support per-type breakdown without extra queries)
   const types = [
     { name: 'Detached',      mult: 1.85, change: (growth * 1.1).toFixed(1) },
     { name: 'Semi-detached', mult: 1.20, change: growth.toFixed(1) },
@@ -324,7 +421,7 @@ function buildAreaSnapshot(postcode, region, growth, ppm, units) {
 
   let typesHtml = '';
   types.forEach(t => {
-    const price = Math.round(basePrice * t.mult);
+    const price = Math.round(medianPrice * t.mult);
     const changeNum = parseFloat(t.change);
     typesHtml += `
       <div class="type-tile">

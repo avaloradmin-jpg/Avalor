@@ -921,6 +921,15 @@
       <!-- RESULTS (hidden until run) -->
       <div id="results" style="display:none">
 
+        <!-- Fallback data warning banner -->
+        <div id="data-banner" style="display:none;background:var(--amber-light);border:1px solid var(--amber);border-radius:10px;padding:12px 16px;margin-bottom:1rem;align-items:flex-start;gap:10px">
+          <i class="ti ti-alert-triangle" style="color:var(--amber);font-size:18px;flex-shrink:0;margin-top:1px"></i>
+          <div>
+            <div style="font-weight:600;font-size:13px;color:var(--amber)">Estimated figures — limited local sales data</div>
+            <div id="data-banner-msg" style="font-size:12px;color:#7A5010;margin-top:2px">Fewer than 5 sold comparables were found for this postcode area in the last 18 months. GDV and area stats are based on regional averages, not live market data.</div>
+          </div>
+        </div>
+
         <!-- Financial summary + Risk flags -->
         <div class="two-col">
           <div class="card">
@@ -1028,7 +1037,7 @@
             <div class="metric-tile"><div class="metric-tile-label">Avg sold price</div><div class="metric-tile-value" style="font-size:18px" id="snap-avg">£487k</div><div class="metric-tile-sub">Last 12 months</div></div>
             <div class="metric-tile"><div class="metric-tile-label">Transactions</div><div class="metric-tile-value" style="font-size:18px" id="snap-tx">312</div><div class="metric-tile-sub">Last 12 months</div></div>
             <div class="metric-tile"><div class="metric-tile-label">5yr price growth</div><div class="metric-tile-value" style="font-size:18px;color:var(--green)" id="snap-growth">+6.2%</div><div class="metric-tile-sub">Annual average</div></div>
-            <div class="metric-tile"><div class="metric-tile-label">Avg days on market</div><div class="metric-tile-value" style="font-size:18px" id="snap-dom">34</div><div class="metric-tile-sub">Current estimate</div></div>
+            <div class="metric-tile"><div class="metric-tile-label">Avg days on market</div><div class="metric-tile-value" style="font-size:18px" id="snap-dom">—</div><div class="metric-tile-sub">Coming soon</div></div>
           </div>
           <div class="hr"></div>
           <div class="card-title" style="margin-bottom:1rem"><i class="ti ti-chart-bar" style="font-size:15px"></i>Average sold price — 5 years</div>
