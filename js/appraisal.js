@@ -492,7 +492,6 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
   document.getElementById('snap-avg').textContent = fmt(medianPrice);
   document.getElementById('snap-tx').textContent = txCount;
   document.getElementById('snap-growth').textContent = (growth >= 0 ? '+' : '') + growth.toFixed(1) + '%';
-  document.getElementById('snap-dom').textContent = '—';
 
   // Update the transactions sub-label
   const txTile = document.getElementById('snap-tx').closest('.metric-tile');
