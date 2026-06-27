@@ -55,37 +55,52 @@ function epcScoreToBand(score) {
   return 'G';
 }
 
-async function fetchEpcData(postcode) {
+async function resolveHomedataAddresses(postcode) {
   const pcClean = postcode.replace(/\s+/g, '').toUpperCase();
-
-  // Resolve postcode to a list of UPRNs
-  const addrResp = await fetch(`${HOMEDATA_PROXY}/address/postcode/${pcClean}/`, {
+  const resp = await fetch(`${HOMEDATA_PROXY}/address/postcode/${pcClean}/`, {
     signal: AbortSignal.timeout(6000)
   });
-  if (!addrResp.ok) throw new Error('Homedata postcode lookup failed: ' + addrResp.status);
-  const addrData = await addrResp.json();
-
-  const addresses = Array.isArray(addrData) ? addrData : (addrData.addresses ?? addrData.results ?? []);
+  if (!resp.ok) throw new Error('Homedata postcode lookup failed: ' + resp.status);
+  const data = await resp.json();
+  const addresses = Array.isArray(data) ? data : (data.addresses ?? data.results ?? []);
   if (!addresses.length) throw new Error('No addresses found for postcode');
+  return addresses;
+}
 
-  // Try up to 5 UPRNs — not every property has EPC data
+async function fetchEpcData(addresses) {
+  // Try up to 5 UPRNs — not every property has a lodged EPC
   for (const addr of addresses.slice(0, 5)) {
     const uprn = addr.uprn;
     if (!uprn) continue;
-
-    const epcResp = await fetch(`${HOMEDATA_PROXY}/epc-checker/${uprn}/`, {
+    const resp = await fetch(`${HOMEDATA_PROXY}/epc-checker/${uprn}/`, {
       signal: AbortSignal.timeout(5000)
     });
-    if (!epcResp.ok) continue;
-    const epcData = await epcResp.json();
-
-    const score = epcData.current_energy_efficiency ?? null;
+    if (!resp.ok) continue;
+    const data = await resp.json();
+    const score = data.current_energy_efficiency ?? null;
     if (score == null) continue;
-
     return { band: epcScoreToBand(score), score };
   }
-
   throw new Error('No EPC data found for properties in this postcode');
+}
+
+const FLOOD_LABEL_RANK = { 'Very High': 4, 'High': 3, 'Medium': 2, 'Low': 1 };
+
+async function fetchFloodRisk(uprn) {
+  const resp = await fetch(`${HOMEDATA_PROXY}/risks/flood/?uprn=${uprn}`, {
+    signal: AbortSignal.timeout(6000)
+  });
+  if (!resp.ok) throw new Error('Flood risk lookup failed: ' + resp.status);
+  const data = await resp.json();
+  return data.results ?? [];
+}
+
+function worstFloodLabel(results) {
+  if (!results.length) return null;
+  return results.reduce((worst, r) => {
+    const rank = FLOOD_LABEL_RANK[r.label] ?? 0;
+    return rank > (FLOOD_LABEL_RANK[worst] ?? 0) ? r.label : worst;
+  }, null);
 }
 
 async function fetchLandRegistryComps(postcode, devType) {
@@ -209,22 +224,32 @@ async function runAppraisal() {
   let usedFallback = false;
   let fallbackReason = '';
   let epcResult = null;
+  let floodResults = null;
 
-  const [lrResult, epcOutcome] = await Promise.allSettled([
+  // Land Registry and Homedata address lookup run in parallel
+  const [lrOutcome, addrOutcome] = await Promise.allSettled([
     fetchLandRegistryComps(postcode, devType),
-    fetchEpcData(postcode)
+    resolveHomedataAddresses(postcode)
   ]);
 
-  if (lrResult.status === 'fulfilled') {
-    comps = lrResult.value.transactions;
-    district = lrResult.value.district;
+  if (lrOutcome.status === 'fulfilled') {
+    comps = lrOutcome.value.transactions;
+    district = lrOutcome.value.district;
   } else {
     usedFallback = true;
     fallbackReason = 'The Land Registry API could not be reached. GDV and area statistics are based on regional averages, not live market data.';
   }
 
-  if (epcOutcome.status === 'fulfilled') {
-    epcResult = epcOutcome.value;
+  // EPC and flood fire in parallel once we have addresses
+  if (addrOutcome.status === 'fulfilled') {
+    const addresses = addrOutcome.value;
+    const uprn = addresses[0]?.uprn;
+    const [epcOutcome, floodOutcome] = await Promise.allSettled([
+      fetchEpcData(addresses),
+      uprn ? fetchFloodRisk(uprn) : Promise.reject('No UPRN')
+    ]);
+    if (epcOutcome.status === 'fulfilled') epcResult = epcOutcome.value;
+    if (floodOutcome.status === 'fulfilled') floodResults = floodOutcome.value;
   }
 
   // Split into last 12 months and prior 12 months for YoY growth
@@ -332,7 +357,7 @@ async function runAppraisal() {
 
   buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin);
   buildSensTable(gdv, buildMid, purchase, sdlt, finance);
-  buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult);
+  buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult, floodResults);
 
   const growthWidth = Math.min(90, Math.max(10, (Math.abs(growth) / 10) * 100));
   document.getElementById('growth-fill').style.width = growthWidth + '%';
@@ -422,7 +447,7 @@ function buildSensTable(gdv, buildMid, purchase, sdlt, finance) {
   document.getElementById('sens-body').innerHTML = html;
 }
 
-function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback, epcResult) {
+function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback, epcResult, floodResults) {
   const areaLabel = district || postcode.split(' ')[0];
   document.getElementById('snapshot-postcode').textContent = areaLabel;
 
@@ -454,6 +479,31 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
     } else {
       epcEl.className = 'flag flag-warn';
       epcEl.textContent = 'Not available';
+    }
+  }
+
+  // Flood flag
+  const floodEl = document.getElementById('flag-flood');
+  if (floodEl) {
+    if (floodResults === null) {
+      floodEl.className = 'flag flag-warn';
+      floodEl.textContent = 'Not available';
+    } else {
+      const worst = worstFloodLabel(floodResults);
+      if (!worst) {
+        floodEl.className = 'flag flag-safe';
+        floodEl.textContent = 'Zone 1 — very low risk';
+      } else if (worst === 'Low') {
+        floodEl.className = 'flag flag-warn';
+        floodEl.textContent = 'Zone 2 — low risk';
+      } else if (worst === 'Medium') {
+        floodEl.className = 'flag flag-warn';
+        floodEl.textContent = 'Zone 3 — medium risk';
+      } else {
+        // High or Very High
+        floodEl.className = 'flag flag-risk';
+        floodEl.textContent = `Zone 3 — ${worst.toLowerCase()} risk`;
+      }
     }
   }
 
