@@ -64,6 +64,50 @@ In 123-reg:
 
 ---
 
-## Step 5 — Next: Stripe + PlanWire
+## Step 5 — Stripe (payments)
 
-Come back after the app is live and we'll wire these up.
+### Local testing
+
+You need two terminals running simultaneously:
+
+**Terminal 1 — the app server:**
+```
+node serve.js
+```
+
+**Terminal 2 — Stripe webhook forwarding:**
+```
+stripe listen --forward-to localhost:3456/api/stripe/webhook
+```
+
+When `stripe listen` starts, it prints a line like:
+```
+> Ready! Your webhook signing secret is whsec_abc123...
+```
+
+Copy that value and paste it into `.env` as `STRIPE_WEBHOOK_SECRET=whsec_abc123...`, then restart `node serve.js`.
+
+### Supabase service role key (required for webhook to update plans)
+
+The webhook updates `profiles.plan` in Supabase using the service-role key (which bypasses RLS). To add it:
+
+1. Go to your Supabase project → Settings → API
+2. Copy the **service_role** key (not the anon key)
+3. Add it to `.env`: `SUPABASE_SERVICE_KEY=eyJ...`
+
+### End-to-end test flow
+
+1. Start both terminals above
+2. Open http://localhost:3456, sign in
+3. Click Upgrade → Choose a plan
+4. Use Stripe test card `4242 4242 4242 4242`, any future expiry, any CVC
+5. After payment you're redirected back to `/?upgraded=1`
+6. The app shows a confirmation toast and your tier badge updates
+
+### Production deployment
+
+When deploying to Vercel or similar:
+- Add all `.env` variables as environment variables in the hosting dashboard
+- Replace `localhost:3456` in `success_url` / `cancel_url` in `serve.js` with your real domain
+- Create a live webhook endpoint in the Stripe dashboard (Developers → Webhooks → Add endpoint) pointing to `https://yourdomain.com/api/stripe/webhook`, listening for `checkout.session.completed`
+- Use the webhook signing secret from the Stripe dashboard (not the CLI one) as `STRIPE_WEBHOOK_SECRET`

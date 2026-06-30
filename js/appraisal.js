@@ -96,6 +96,14 @@ async function fetchFloodRisk(uprn) {
   return data.results ?? [];
 }
 
+async function fetchConservationArea(lat, lng) {
+  const url = `https://www.planning.data.gov.uk/entity.json?dataset=conservation-area&latitude=${lat}&longitude=${lng}&limit=1`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(6000) });
+  if (!resp.ok) throw new Error('Conservation area lookup failed: ' + resp.status);
+  const data = await resp.json();
+  return (data.count ?? 0) > 0;
+}
+
 async function fetchPlanwireData(lat, lng) {
   const url = `${PLANWIRE_PROXY}/v1/applications/nearby?lat=${lat}&lng=${lng}&radius_km=0.5&limit=10`;
   const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
@@ -258,6 +266,7 @@ async function runAppraisal() {
   let epcResult = null;
   let floodResults = null;
   let planwireResult = null;
+  let conservationArea = null;
 
   // Land Registry and Homedata address lookup run in parallel
   const [lrOutcome, addrOutcome] = await Promise.allSettled([
@@ -278,15 +287,17 @@ async function runAppraisal() {
   const uprn = addresses[0]?.uprn;
   const lrCoords = lrOutcome.status === 'fulfilled' ? lrOutcome.value : null;
 
-  const [epcOutcome, floodOutcome, planwireOutcome] = await Promise.allSettled([
+  const [epcOutcome, floodOutcome, planwireOutcome, conservationOutcome] = await Promise.allSettled([
     addresses.length ? fetchEpcData(addresses) : Promise.reject('No addresses'),
     uprn ? fetchFloodRisk(uprn) : Promise.reject('No UPRN'),
-    lrCoords ? fetchPlanwireData(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords')
+    lrCoords ? fetchPlanwireData(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
+    lrCoords ? fetchConservationArea(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords')
   ]);
 
   if (epcOutcome.status === 'fulfilled') epcResult = epcOutcome.value;
   if (floodOutcome.status === 'fulfilled') floodResults = floodOutcome.value;
   if (planwireOutcome.status === 'fulfilled') planwireResult = planwireOutcome.value;
+  if (conservationOutcome.status === 'fulfilled') conservationArea = conservationOutcome.value;
 
   // Split into last 12 months and prior 12 months for YoY growth
   const now = new Date();
@@ -393,7 +404,7 @@ async function runAppraisal() {
 
   buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin);
   buildSensTable(gdv, buildMid, purchase, sdlt, finance);
-  buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult, floodResults, planwireResult);
+  buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult, floodResults, planwireResult, conservationArea);
 
   const growthWidth = Math.min(90, Math.max(10, (Math.abs(growth) / 10) * 100));
   document.getElementById('growth-fill').style.width = growthWidth + '%';
@@ -401,6 +412,7 @@ async function runAppraisal() {
 
   document.getElementById('results').style.display = 'block';
   document.getElementById('save-btn').style.display = 'inline-flex';
+  document.getElementById('export-btn').style.display = 'inline-flex';
 
   markOnboardingStep(1);
 
@@ -483,7 +495,7 @@ function buildSensTable(gdv, buildMid, purchase, sdlt, finance) {
   document.getElementById('sens-body').innerHTML = html;
 }
 
-function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback, epcResult, floodResults, planwireResult) {
+function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback, epcResult, floodResults, planwireResult, conservationArea) {
   const areaLabel = district || postcode.split(' ')[0];
   document.getElementById('snapshot-postcode').textContent = areaLabel;
 
@@ -575,6 +587,21 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
     }
   }
 
+  // Conservation area flag
+  const conservationEl = document.getElementById('flag-conservation');
+  if (conservationEl) {
+    if (conservationArea === null) {
+      conservationEl.className = 'flag flag-warn';
+      conservationEl.textContent = 'Not available';
+    } else if (conservationArea) {
+      conservationEl.className = 'flag flag-risk';
+      conservationEl.textContent = 'Yes — additional controls apply';
+    } else {
+      conservationEl.className = 'flag flag-safe';
+      conservationEl.textContent = 'No';
+    }
+  }
+
   // 5-year price bars using growth rate
   const years = ['2021', '2022', '2023', '2024', '2025'];
   const annualRate = growth / 100;
@@ -620,6 +647,38 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
       </div>`;
   });
   document.getElementById('type-grid').innerHTML = typesHtml;
+}
+
+function exportPdf() {
+  if (!currentAppraisal) return;
+
+  // Populate print header
+  document.getElementById('pdf-meta-postcode').textContent = currentAppraisal.postcode;
+  document.getElementById('pdf-meta-devtype').textContent = currentAppraisal.devType;
+  document.getElementById('pdf-meta-date').textContent = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  // Apply or remove watermark class based on plan
+  if (typeof currentPlan !== 'undefined' && currentPlan === 'essential') {
+    document.body.classList.add('pdf-watermark');
+  } else {
+    document.body.classList.remove('pdf-watermark');
+  }
+
+  // Set a descriptive document title so the browser save dialog defaults to a sensible filename
+  const prevTitle = document.title;
+  document.title = `Avalor Appraisal — ${currentAppraisal.postcode} — ${currentAppraisal.devType}`;
+
+  // Force the sensitivity table open so it prints
+  const sensWrap = document.getElementById('sens-wrap');
+  const sensWasHidden = sensWrap.style.display === 'none';
+  if (sensWasHidden) sensWrap.style.display = 'block';
+
+  window.print();
+
+  // Restore state after print dialog closes
+  document.title = prevTitle;
+  document.body.classList.remove('pdf-watermark');
+  if (sensWasHidden) sensWrap.style.display = 'none';
 }
 
 function toggleSens() {

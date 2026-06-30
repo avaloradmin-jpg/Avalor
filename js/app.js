@@ -1,6 +1,7 @@
 // Avalor — Main app controller
 
 let currentUser = null;
+let currentPlan = 'trial';
 let onboardingSteps = { 1: false, 2: false, 3: false };
 
 // ─── AUTH ────────────────────────────────────────────────────────────────────
@@ -107,9 +108,11 @@ async function handleLogout() {
 
 async function init() {
   const { data: { session } } = await sb.auth.getSession();
+  let appLaunched = false;
 
   if (session?.user) {
     currentUser = session.user;
+    appLaunched = true;
     launchApp();
   } else {
     showAuth('login');
@@ -122,16 +125,29 @@ async function init() {
       // Ensure profile exists — covers the post-email-confirmation path where the
       // profile insert at signup was blocked by RLS (no session at that point).
       const meta = session.user.user_metadata || {};
-      await sb.from('profiles').upsert({
-        id: session.user.id,
-        full_name: meta.full_name || '',
-        email: session.user.email || '',
-        role: meta.role || '',
-        plan: 'trial',
-        trial_started_at: new Date().toISOString()
-      }, { onConflict: 'id', ignoreDuplicates: true });
+      // Insert profile on first sign-in only — never overwrite plan or trial_started_at
+      const { data: existingProfile } = await sb.from('profiles').select('id').eq('id', session.user.id).single();
+      if (!existingProfile) {
+        await sb.from('profiles').insert({
+          id: session.user.id,
+          full_name: meta.full_name || '',
+          email: session.user.email || '',
+          role: meta.role || '',
+          plan: 'trial',
+          trial_started_at: new Date().toISOString()
+        });
+      } else {
+        await sb.from('profiles').update({
+          full_name: meta.full_name || '',
+          email: session.user.email || '',
+          role: meta.role || '',
+        }).eq('id', session.user.id);
+      }
 
-      launchApp();
+      if (!appLaunched) {
+        appLaunched = true;
+        launchApp();
+      }
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
       document.getElementById('app').style.display = 'none';
@@ -155,6 +171,8 @@ async function launchApp() {
       const trialEnd = new Date(trialStart.getTime() + 14 * 24 * 60 * 60 * 1000);
       const now = new Date();
       const daysLeft = Math.max(0, Math.ceil((trialEnd - now) / (24 * 60 * 60 * 1000)));
+
+      currentPlan = profile.plan || 'trial';
 
       if (profile.plan === 'trial') {
         document.getElementById('tier-badge').textContent = `Trial — ${daysLeft}d left`;
@@ -196,6 +214,8 @@ async function launchApp() {
       }
     }
   }
+
+  window.dispatchEvent(new Event('appReady'));
 }
 
 // ─── NAVIGATION ──────────────────────────────────────────────────────────────
@@ -226,6 +246,59 @@ function closeUpgrade() {
 function closeUpgradeOutside(e) {
   if (e.target === document.getElementById('upgrade-modal')) closeUpgrade();
 }
+
+async function choosePlan(plan) {
+  if (!currentUser) return;
+
+  const btn = document.getElementById(`btn-choose-${plan}`);
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Redirecting…';
+
+  try {
+    const res = await fetch('/api/stripe/create-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan, userId: currentUser.id, email: currentUser.email }),
+    });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      throw new Error(data.error || 'No checkout URL returned');
+    }
+  } catch (err) {
+    toast('Something went wrong. Please try again.');
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+// Handle post-Stripe redirect params on page load
+(function handleStripeReturn() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('upgraded')) {
+    // Clean URL immediately
+    history.replaceState(null, '', '/');
+    // Wait for auth to settle, then refresh plan from DB and show confirmation
+    const { data: { subscription: upgradeSub } } = sb.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
+        upgradeSub.unsubscribe();
+        const { data: profile } = await sb.from('profiles').select('plan').eq('id', session.user.id).single();
+        if (profile && profile.plan !== 'trial') {
+          toast(`You're on the ${profile.plan === 'professional' ? 'Professional' : 'Essential'} plan — welcome aboard!`);
+        } else {
+          // Webhook may not have landed yet — show optimistic message
+          toast('Payment complete! Your plan will activate within a few seconds.');
+        }
+      }
+    });
+  } else if (params.has('cancelled')) {
+    history.replaceState(null, '', '/');
+    // Open the upgrade modal once the app has rendered
+    window.addEventListener('appReady', () => openUpgrade(), { once: true });
+  }
+})()
 
 // ─── ONBOARDING ──────────────────────────────────────────────────────────────
 

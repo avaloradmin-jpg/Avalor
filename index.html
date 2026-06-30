@@ -328,8 +328,9 @@
       padding: 12px 14px;
     }
 
-    .metric-tile-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
-    .metric-tile-value { font-size: 22px; font-weight: 600; }
+    .metric-tile-label { font-size: 12px; line-height: 1.3; color: var(--text-secondary); margin-bottom: 4px; min-height: 2.6em; display: flex; align-items: flex-start; }
+    .sdlt-grid .metric-tile-label { min-height: 48px; }
+    .metric-tile-value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .metric-tile-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
     .metric-tile.highlight { background: var(--green-light); }
@@ -722,6 +723,166 @@
       .topbar-nav { display: none; }
       .page-wrap { padding: 1rem; }
     }
+    /* ── PDF EXPORT ─────────────────────────────────────────────────────────── */
+    #pdf-print-header { display: none; }
+    #pdf-print-footer { display: none; }
+
+    @media print {
+      /* Force the browser to actually print background colours — without this,
+         every pastel tile/badge/verdict box silently turns white and any text
+         that depends on its background for contrast becomes unreadable. */
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+
+      /* Hide everything except results */
+      .topbar, .sidebar, .page-header, #onboarding-card, #trial-banner,
+      #property-details-card, #data-banner, .detail-toggle, #sens-wrap > .sens-legend,
+      #page-saved, #page-compare, #page-account, .modal-overlay,
+      .btn, [id$="-btn"] { display: none !important; }
+
+      body { background: #FFFFFF !important; color: #111827 !important; font-size: 13px; }
+      .app-layout { display: block !important; }
+      .main-content { padding: 0 !important; margin: 0 !important; }
+      .page-wrap { padding: 0 !important; max-width: none !important; }
+      .page { display: block !important; padding: 0 !important; }
+      #page-appraisal { display: block !important; }
+      #results { display: block !important; }
+
+      /* Force sens table open */
+      #sens-wrap { display: block !important; }
+
+      /* Base text colours — explicit hex so nothing depends on CSS variable
+         resolution inside the print context. */
+      .card-title { color: #111827 !important; }
+      .card-title i { color: #1D9E75 !important; }
+      .metric-tile-label { color: #6B7280 !important; }
+      .metric-tile-value { color: #111827 !important; }
+      .metric-tile-sub { color: #9CA3AF !important; }
+      .type-name { color: #6B7280 !important; }
+      .type-price { color: #111827 !important; }
+      .bar-val-out { color: #6B7280 !important; }
+      .sens-table th { color: #6B7280 !important; }
+      .sens-table td { color: #111827 !important; }
+
+      /* Cards */
+      .card {
+        background: #FFFFFF !important;
+        box-shadow: none !important;
+        border: 1px solid #E4E7EC !important;
+        border-radius: 6px !important;
+        break-inside: avoid;
+        margin-bottom: 12px !important;
+      }
+      .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+      /* Neutral tinted backgrounds */
+      .metric-tile, .sens-table th, .bar-track, .growth-track {
+        background: #F1F3F6 !important;
+      }
+
+      /* Verdict / flags / sensitivity cells — pastel backgrounds with dark,
+         readable text, explicit hex on both sides of the pairing. */
+      .verdict.viable, .metric-tile.highlight, .flag-safe, .cell-green,
+      .resilience-summary.good {
+        background: #E1F5EE !important;
+      }
+      .verdict.viable, .metric-tile.highlight .metric-tile-value,
+      .flag-safe, .cell-green, .resilience-summary.good .resilience-headline,
+      .resilience-summary.good .resilience-detail, .resilience-summary.good i,
+      .bar-val {
+        color: #085041 !important;
+      }
+
+      .verdict.marginal, .flag-warn, .cell-amber, .resilience-summary.ok {
+        background: #FAEEDA !important;
+      }
+      .verdict.marginal, .flag-warn, .cell-amber,
+      .resilience-summary.ok .resilience-headline,
+      .resilience-summary.ok .resilience-detail, .resilience-summary.ok i {
+        color: #7A4E00 !important;
+      }
+
+      .verdict.not-viable, .flag-risk, .cell-red, .resilience-summary.bad {
+        background: #FCEBEB !important;
+      }
+      .verdict.not-viable, .flag-risk, .cell-red,
+      .resilience-summary.bad .resilience-headline,
+      .resilience-summary.bad .resilience-detail, .resilience-summary.bad i {
+        color: #A32D2D !important;
+      }
+
+      .verdict-desc, .resilience-detail { opacity: 1 !important; }
+
+      .bar-fill, .growth-fill, .headroom-fill { background: #1D9E75 !important; }
+      .type-change.up { color: #1D9E75 !important; }
+      .type-change.flat { color: #9CA3AF !important; }
+      .source-note { color: #6B7280 !important; }
+
+      /* PDF header */
+      #pdf-print-header {
+        display: flex !important;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 0 12px 0;
+        margin-bottom: 16px;
+        border-bottom: 2px solid #1D9E75;
+      }
+      #pdf-print-header .pdf-logo {
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+        color: #111827 !important;
+      }
+      #pdf-print-header .pdf-logo > span:first-of-type { color: #1D9E75 !important; }
+      #pdf-print-header .pdf-logo .pdf-domain {
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: 0;
+        color: #9CA3AF !important;
+        margin-left: 1px;
+      }
+      #pdf-print-header .pdf-meta {
+        text-align: right;
+        font-size: 11px;
+        color: #6B7280 !important;
+        line-height: 1.6;
+      }
+
+      /* PDF footer */
+      #pdf-print-footer {
+        display: block !important;
+        text-align: center;
+        font-size: 10px;
+        color: #9CA3AF !important;
+        padding: 12px 0 0;
+        margin-top: 16px;
+        border-top: 1px solid #E4E7EC;
+      }
+
+      /* Essential watermark */
+      body.pdf-watermark::before {
+        content: 'AVALOR ESSENTIAL';
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(-45deg);
+        font-size: 72px;
+        font-weight: 800;
+        color: rgba(0, 0, 0, 0.07) !important;
+        letter-spacing: 6px;
+        white-space: nowrap;
+        pointer-events: none;
+        z-index: 9999;
+      }
+
+      @page {
+        margin: 18mm 14mm;
+        size: A4;
+      }
+    }
   </style>
 </head>
 <body>
@@ -834,9 +995,14 @@
           <div class="page-title">New appraisal</div>
           <div class="page-subtitle">Enter a postcode to run your development viability assessment</div>
         </div>
-        <button class="btn btn-primary" onclick="saveCurrentAppraisal()" id="save-btn" style="display:none">
-          <i class="ti ti-bookmark"></i>Save appraisal
-        </button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn" onclick="exportPdf()" id="export-btn" style="display:none">
+            <i class="ti ti-file-download"></i>Export PDF
+          </button>
+          <button class="btn btn-primary" onclick="saveCurrentAppraisal()" id="save-btn" style="display:none">
+            <i class="ti ti-bookmark"></i>Save appraisal
+          </button>
+        </div>
       </div>
 
       <!-- Onboarding checklist (shown until all steps done) -->
@@ -860,7 +1026,7 @@
       </div>
 
       <!-- Property Details -->
-      <div class="card" style="margin-bottom:1.5rem">
+      <div class="card" id="property-details-card" style="margin-bottom:1.5rem">
         <div class="card-title"><i class="ti ti-map-pin"></i>Property details</div>
         <div class="postcode-row">
           <input type="text" class="form-input" id="postcode" placeholder="Enter postcode e.g. BR1 2EQ" style="text-transform:uppercase"/>
@@ -920,6 +1086,16 @@
 
       <!-- RESULTS (hidden until run) -->
       <div id="results" style="display:none">
+
+        <!-- PDF print header (hidden on screen, visible in print) -->
+        <div id="pdf-print-header">
+          <div class="pdf-logo">Avalo<span>r</span><span class="pdf-domain">.co.uk</span></div>
+          <div class="pdf-meta">
+            <span id="pdf-meta-postcode"></span><br>
+            <span id="pdf-meta-devtype"></span><br>
+            Generated <span id="pdf-meta-date"></span>
+          </div>
+        </div>
 
         <!-- Fallback data warning banner -->
         <div id="data-banner" style="display:none;background:var(--amber-light);border:1px solid var(--amber);border-radius:10px;padding:12px 16px;margin-bottom:1rem;align-items:flex-start;gap:10px">
@@ -1047,6 +1223,11 @@
           <div class="source-note"><i class="ti ti-database" style="font-size:12px"></i>HM Land Registry Price Paid Data — updated monthly</div>
         </div>
 
+        <!-- PDF print footer (hidden on screen, visible in print) -->
+        <div id="pdf-print-footer">
+          Avalor · avalor.app · UK residential development appraisal tool · Figures are indicative estimates only and do not constitute financial or planning advice.
+        </div>
+
       </div><!-- /results -->
     </div>
   </div>
@@ -1162,7 +1343,7 @@
           <li class="muted"><i class="ti ti-x"></i>Deal comparison</li>
           <li class="muted"><i class="ti ti-x"></i>PDF export</li>
         </ul>
-        <button class="btn btn-full" onclick="toast('Redirecting to checkout…')">Choose Essential</button>
+        <button class="btn btn-full" id="btn-choose-essential" onclick="choosePlan('essential')">Choose Essential</button>
       </div>
       <div class="upgrade-card featured">
         <div class="popular-badge">Most popular</div>
@@ -1178,7 +1359,7 @@
           <li><i class="ti ti-check"></i>Agent &amp; professional fees</li>
           <li><i class="ti ti-check"></i>Priority email support</li>
         </ul>
-        <button class="btn btn-primary btn-full" onclick="toast('Redirecting to checkout…')">Choose Professional</button>
+        <button class="btn btn-primary btn-full" id="btn-choose-professional" onclick="choosePlan('professional')">Choose Professional</button>
       </div>
     </div>
     <div class="modal-footer"><i class="ti ti-lock"></i>Secure payment via Stripe. Cancel anytime.</div>
