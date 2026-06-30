@@ -1,24 +1,32 @@
-export default async function handler(req, res) {
-  const upstreamPath = req.url.replace('/api/planwire', '');
-  const url = `https://api.planwire.io${upstreamPath}`;
+const https = require('https');
 
-  let upstream;
-  try {
-    upstream = await fetch(url, {
-      method: req.method,
-      headers: {
-        'Accept': 'application/json',
-        'X-API-Key': process.env.PLANWIRE_API_KEY
-      }
-    });
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-    return;
-  }
+module.exports = function handler(req, res) {
+  // Reconstruct upstream path from catch-all segments + original query string
+  const segments = Array.isArray(req.query.path) ? req.query.path : [req.query.path];
+  const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  const upstreamPath = '/' + segments.join('/') + qs;
 
-  const body = await upstream.text();
-  res.status(upstream.status)
-    .setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json')
-    .setHeader('Access-Control-Allow-Origin', '*')
-    .end(body);
-}
+  const options = {
+    hostname: 'api.planwire.io',
+    path: upstreamPath,
+    method: req.method,
+    headers: {
+      'Accept': 'application/json',
+      'X-API-Key': process.env.PLANWIRE_API_KEY
+    }
+  };
+
+  const proxy = https.request(options, upstream => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', upstream.headers['content-type'] || 'application/json');
+    res.writeHead(upstream.statusCode);
+    upstream.pipe(res);
+  });
+
+  proxy.on('error', err => {
+    res.writeHead(502);
+    res.end(JSON.stringify({ error: err.message }));
+  });
+
+  req.pipe(proxy);
+};
