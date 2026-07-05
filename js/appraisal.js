@@ -340,7 +340,8 @@ async function runAppraisal() {
   currentAppraisal = {
     postcode, devType, region, purchase, area, units,
     gdv, buildMid, sdlt, finance, profit, margin, rlv,
-    bcis, growth, ppm, compCount: last12.length, district, usedFallback
+    bcis, growth, ppm, compCount: last12.length, district, usedFallback,
+    epcResult, floodZone, planwireResult, conservationArea
   };
 
   btn.innerHTML = 'Run appraisal';

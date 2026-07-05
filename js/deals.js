@@ -1,5 +1,94 @@
 // Avalor — Saved deals + comparison logic
 
+let shareModalDealId = null;
+
+function generateShareToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function shareDeal(id) {
+  if (typeof currentPlan !== 'undefined' && currentPlan !== 'professional') {
+    openUpgrade();
+    return;
+  }
+
+  const { data: existing, error: fetchError } = await sb
+    .from('saved_deals')
+    .select('share_token, share_enabled')
+    .eq('id', id)
+    .eq('user_id', currentUser.id)
+    .single();
+
+  if (fetchError) {
+    toast('Could not create share link', 'error');
+    return;
+  }
+
+  // Reuse the existing token only if the link is currently live — a revoked
+  // link should never come back to life under its old token.
+  let token = existing.share_enabled ? existing.share_token : null;
+
+  if (!token) {
+    token = generateShareToken();
+    const { error } = await sb
+      .from('saved_deals')
+      .update({ share_token: token, share_enabled: true })
+      .eq('id', id)
+      .eq('user_id', currentUser.id);
+
+    if (error) {
+      toast('Could not create share link', 'error');
+      return;
+    }
+  }
+
+  openShareModal(id, token);
+}
+
+function openShareModal(id, token) {
+  shareModalDealId = id;
+  const url = `${window.location.origin}/share.html?t=${token}`;
+  document.getElementById('share-link-input').value = url;
+  document.getElementById('share-modal').classList.add('open');
+}
+
+function closeShareModal() {
+  document.getElementById('share-modal').classList.remove('open');
+  shareModalDealId = null;
+}
+
+function closeShareModalOutside(e) {
+  if (e.target === document.getElementById('share-modal')) closeShareModal();
+}
+
+function copyShareLink() {
+  const input = document.getElementById('share-link-input');
+  input.select();
+  navigator.clipboard.writeText(input.value)
+    .then(() => toast('Link copied to clipboard', 'success'))
+    .catch(() => toast('Could not copy link — please copy it manually', 'error'));
+}
+
+async function revokeShareFromModal() {
+  if (!shareModalDealId) return;
+
+  const { error } = await sb
+    .from('saved_deals')
+    .update({ share_enabled: false })
+    .eq('id', shareModalDealId)
+    .eq('user_id', currentUser.id);
+
+  if (error) {
+    toast('Could not revoke link', 'error');
+    return;
+  }
+
+  toast('Share link revoked');
+  closeShareModal();
+  loadSavedDeals();
+}
+
 async function saveCurrentAppraisal() {
   if (!currentAppraisal) return;
   if (!currentUser) { toast('Please sign in to save deals', 'error'); return; }
@@ -87,6 +176,12 @@ async function loadSavedDeals() {
       const flagClass = deal.verdict === 'viable' ? 'flag-safe' : deal.verdict === 'marginal' ? 'flag-warn' : 'flag-risk';
       const flagText = deal.verdict === 'viable' ? 'Viable' : deal.verdict === 'marginal' ? 'Marginal' : 'Not viable';
       const gdvK = deal.gdv >= 1000000 ? (deal.gdv / 1000000).toFixed(1) + 'm' : Math.round(deal.gdv / 1000) + 'k';
+      const isPro = currentPlan === 'professional';
+      const shareIcon = isPro ? 'ti-share' : 'ti-lock';
+      const shareTitle = isPro
+        ? (deal.share_enabled ? 'Manage share link' : 'Share appraisal')
+        : 'Upgrade to Professional to share appraisals';
+      const shareStyle = isPro && deal.share_enabled ? 'style="color:var(--green)"' : (isPro ? '' : 'style="color:var(--text-tertiary)"');
 
       html += `
         <div class="deal-card">
@@ -110,6 +205,7 @@ async function loadSavedDeals() {
           </div>
           <div class="deal-actions">
             <button class="btn btn-sm" onclick="viewDeal(${deal.id})" title="View"><i class="ti ti-eye"></i></button>
+            <button class="btn btn-sm" onclick="shareDeal(${deal.id})" title="${shareTitle}" ${shareStyle}><i class="ti ${shareIcon}"></i></button>
             <button class="btn btn-sm" onclick="deleteDeal(${deal.id})" title="Delete" style="color:var(--text-tertiary)"><i class="ti ti-trash"></i></button>
           </div>
         </div>`;

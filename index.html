@@ -618,6 +618,10 @@
     .modal-footer { text-align: center; font-size: 12px; color: var(--text-tertiary); }
     .modal-footer i { vertical-align: -2px; margin-right: 3px; }
 
+    /* SHARE LINK MODAL */
+    .share-link-row { display: flex; gap: 8px; }
+    .share-link-row .form-input { flex: 1; font-size: 13px; }
+
     /* ACCOUNT PAGE */
     .account-section { margin-bottom: 2rem; }
     .account-section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 1rem; }
@@ -1363,6 +1367,24 @@
       </div>
     </div>
     <div class="modal-footer"><i class="ti ti-lock"></i>Secure payment via Stripe. Cancel anytime.</div>
+  </div>
+</div>
+
+<!-- SHARE LINK MODAL -->
+<div class="modal-backdrop" id="share-modal" onclick="closeShareModalOutside(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeShareModal()"><i class="ti ti-x"></i></button>
+    <div class="modal-title">Share this appraisal</div>
+    <div class="modal-sub">Anyone with this link can view a read-only summary — no Avalor account needed.</div>
+    <div class="share-link-row">
+      <input type="text" class="form-input" id="share-link-input" readonly onclick="this.select()"/>
+      <button class="btn btn-primary" onclick="copyShareLink()">Copy link</button>
+    </div>
+    <div style="text-align:center;margin-top:1.5rem">
+      <button class="btn btn-sm" style="color:var(--red);background:none;border:none;cursor:pointer" onclick="revokeShareFromModal()">
+        <i class="ti ti-link-off"></i> Revoke this link
+      </button>
+    </div>
   </div>
 </div>
 

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Shared appraisal — Avalor</title>
+<meta name="robots" content="noindex"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --green: #1D9E75;
+    --green-dark: #0F6E56;
+    --green-light: #E1F5EE;
+    --green-text: #085041;
+    --amber: #BA7517;
+    --amber-light: #FAEEDA;
+    --red: #A32D2D;
+    --red-light: #FCEBEB;
+    --bg: #F7F8FA;
+    --bg-card: #FFFFFF;
+    --bg-secondary: #F1F3F6;
+    --border: #E4E7EC;
+    --text: #111827;
+    --text-secondary: #6B7280;
+    --text-tertiary: #9CA3AF;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  .wrap { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+
+  .logo { font-size: 22px; font-weight: 600; letter-spacing: -0.5px; text-align: center; margin-bottom: 2rem; }
+  .logo span { color: var(--green); }
+
+  .card { background: var(--bg-card); border-radius: 16px; box-shadow: var(--shadow); padding: 2rem; margin-bottom: 1.5rem; }
+
+  .deal-title { font-size: 22px; font-weight: 600; margin-bottom: 2px; }
+  .deal-sub { font-size: 14px; color: var(--text-secondary); margin-bottom: 1.5rem; }
+
+  .verdict { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: var(--radius-sm); margin-bottom: 1.5rem; }
+  .verdict.viable { background: var(--green-light); color: var(--green-text); }
+  .verdict.marginal { background: var(--amber-light); color: #7A4E00; }
+  .verdict.not-viable { background: var(--red-light); color: var(--red); }
+  .verdict i { font-size: 22px; flex-shrink: 0; }
+  .verdict-title { font-weight: 600; font-size: 15px; }
+  .verdict-desc { font-size: 13px; margin-top: 2px; opacity: 0.85; }
+
+  .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1.5rem; }
+  @media (min-width: 480px) { .metrics-grid { grid-template-columns: repeat(3, 1fr); } }
+
+  .metric-tile { background: var(--bg-secondary); border-radius: var(--radius-sm); padding: 12px 14px; }
+  .metric-tile-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+  .metric-tile-value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .metric-tile.highlight { background: var(--green-light); }
+  .metric-tile.highlight .metric-tile-value { color: var(--green-text); }
+
+  .section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 10px; }
+
+  .risk-list { list-style: none; }
+  .risk-item { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .risk-item:last-child { border-bottom: none; }
+
+  .flag { font-size: 11px; padding: 2px 9px; border-radius: 20px; font-weight: 500; }
+  .flag-safe { background: var(--green-light); color: var(--green-text); }
+  .flag-warn { background: var(--amber-light); color: #7A4E00; }
+  .flag-risk { background: var(--red-light); color: var(--red); }
+
+  .cta-card { text-align: center; padding: 2.5rem 2rem; background: linear-gradient(135deg, #0F6E56 0%, #1D9E75 50%, #2DC68E 100%); border-radius: 16px; color: #fff; }
+  .cta-card h2 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+  .cta-card p { font-size: 14px; opacity: 0.9; margin-bottom: 1.25rem; }
+  .cta-btn { display: inline-block; background: #fff; color: var(--green-dark); font-weight: 600; padding: 11px 24px; border-radius: var(--radius-sm); text-decoration: none; font-size: 14px; }
+
+  .footer-note { text-align: center; font-size: 12px; color: var(--text-tertiary); margin-top: 1.5rem; }
+
+  .state-msg { text-align: center; padding: 3rem 1.5rem; color: var(--text-secondary); }
+  .state-msg i { font-size: 32px; color: var(--text-tertiary); margin-bottom: 12px; display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">Avalo<span>r</span></div>
+  <div id="content">
+    <div class="state-msg"><i class="ti ti-loader-2"></i>Loading appraisal…</div>
+  </div>
+</div>
+
+<script>
+function fmt(n) {
+  if (n == null || isNaN(n)) return '—';
+  return '£' + Math.round(n).toLocaleString('en-GB');
+}
+
+function verdictMeta(verdict) {
+  if (verdict === 'viable') return { cls: 'viable', icon: 'ti-circle-check', title: 'Viable', desc: 'Profit margin exceeds 20% threshold — deal stacks up at current assumptions.' };
+  if (verdict === 'marginal') return { cls: 'marginal', icon: 'ti-alert-triangle', title: 'Marginal', desc: 'Profit margin between 12–20% — review assumptions carefully before committing.' };
+  return { cls: 'not-viable', icon: 'ti-circle-x', title: 'Not viable', desc: 'Profit margin below 12% — deal unlikely to work at current purchase price.' };
+}
+
+function epcFlag(epcResult) {
+  if (!epcResult || !epcResult.band) return { cls: 'flag-warn', text: 'Not available' };
+  const band = epcResult.band.toUpperCase();
+  const score = epcResult.score ? ` (${epcResult.score})` : '';
+  const cls = 'AB'.includes(band) ? 'flag-safe' : 'CD'.includes(band) ? 'flag-warn' : 'flag-risk';
+  return { cls, text: `${band}${score} — sample property` };
+}
+
+function floodFlag(floodZone) {
+  if (floodZone === null || floodZone === undefined) return { cls: 'flag-warn', text: 'Not available' };
+  if (floodZone === 1) return { cls: 'flag-safe', text: 'Zone 1 — low probability of flooding' };
+  if (floodZone === 2) return { cls: 'flag-warn', text: 'Zone 2 — medium probability of flooding' };
+  return { cls: 'flag-risk', text: 'Zone 3 — high probability of flooding' };
+}
+
+function planningFlags(planwireResult) {
+  if (!planwireResult) return { approvals: { cls: 'flag-warn', text: 'Not available' }, refusals: { cls: 'flag-warn', text: 'Not available' } };
+  const { total, granted, refused, mostRecentRefusalYear } = planwireResult;
+  if (total === 0) return { approvals: { cls: 'flag-safe', text: 'No decisions nearby' }, refusals: { cls: 'flag-safe', text: 'None found' } };
+  const approvalRate = granted / total;
+  const approvals = { cls: approvalRate >= 0.7 ? 'flag-safe' : approvalRate >= 0.4 ? 'flag-warn' : 'flag-risk', text: `${granted} of ${total} approved` };
+  const refusals = refused === 0
+    ? { cls: 'flag-safe', text: 'None in last 2 years' }
+    : { cls: refused >= 2 ? 'flag-risk' : 'flag-warn', text: mostRecentRefusalYear ? `${refused} refusal${refused > 1 ? 's' : ''} (${mostRecentRefusalYear})` : `${refused} refusal${refused > 1 ? 's' : ''}` };
+  return { approvals, refusals };
+}
+
+function conservationFlag(conservationArea) {
+  if (conservationArea === null || conservationArea === undefined) return { cls: 'flag-warn', text: 'Not available' };
+  return conservationArea ? { cls: 'flag-risk', text: 'Yes — additional controls apply' } : { cls: 'flag-safe', text: 'No' };
+}
+
+function showError(message) {
+  document.getElementById('content').innerHTML = `
+    <div class="card">
+      <div class="state-msg">
+        <i class="ti ti-link-off"></i>
+        <div>${message}</div>
+      </div>
+    </div>
+    <div class="cta-card">
+      <h2>Run your own development appraisal</h2>
+      <p>Instant GDV, build cost, SDLT and risk analysis for any UK postcode.</p>
+      <a class="cta-btn" href="/">Create your own appraisal at avalor.co.uk</a>
+    </div>`;
+}
+
+function render(deal) {
+  let extra = {};
+  try { extra = JSON.parse(deal.appraisal_data || '{}'); } catch (_) {}
+
+  const v = verdictMeta(deal.verdict);
+  const epc = epcFlag(extra.epcResult);
+  const flood = floodFlag(extra.floodZone);
+  const planning = planningFlags(extra.planwireResult);
+  const conservation = conservationFlag(extra.conservationArea);
+
+  document.getElementById('content').innerHTML = `
+    <div class="card">
+      <div class="deal-title">${deal.name}</div>
+      <div class="deal-sub">${deal.dev_type || ''} · ${deal.units || '—'} unit${deal.units !== 1 ? 's' : ''} · ${deal.region || ''}</div>
+
+      <div class="verdict ${v.cls}">
+        <i class="ti ${v.icon}"></i>
+        <div>
+          <div class="verdict-title">${v.title}</div>
+          <div class="verdict-desc">${v.desc}</div>
+        </div>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-tile highlight"><div class="metric-tile-label">Margin on GDV</div><div class="metric-tile-value">${deal.margin}%</div></div>
+        <div class="metric-tile"><div class="metric-tile-label">GDV</div><div class="metric-tile-value">${fmt(deal.gdv)}</div></div>
+        <div class="metric-tile"><div class="metric-tile-label">Profit</div><div class="metric-tile-value">${fmt(deal.profit)}</div></div>
+        <div class="metric-tile"><div class="metric-tile-label">Build cost</div><div class="metric-tile-value">${fmt(deal.build_cost)}</div></div>
+        <div class="metric-tile"><div class="metric-tile-label">SDLT</div><div class="metric-tile-value">${fmt(deal.sdlt)}</div></div>
+        <div class="metric-tile"><div class="metric-tile-label">Residual land value</div><div class="metric-tile-value">${fmt(deal.rlv)}</div></div>
+      </div>
+
+      <div class="section-title">Area &amp; risk snapshot</div>
+      <ul class="risk-list">
+        <li class="risk-item"><span>EPC (sample property)</span><span class="flag ${epc.cls}">${epc.text}</span></li>
+        <li class="risk-item"><span>Flood risk</span><span class="flag ${flood.cls}">${flood.text}</span></li>
+        <li class="risk-item"><span>Planning approvals (nearby)</span><span class="flag ${planning.approvals.cls}">${planning.approvals.text}</span></li>
+        <li class="risk-item"><span>Recent refusals</span><span class="flag ${planning.refusals.cls}">${planning.refusals.text}</span></li>
+        <li class="risk-item"><span>Conservation area</span><span class="flag ${conservation.cls}">${conservation.text}</span></li>
+      </ul>
+    </div>
+
+    <div class="cta-card">
+      <h2>Create your own appraisal</h2>
+      <p>Run instant GDV, build cost, SDLT and risk analysis for any UK postcode at avalor.co.uk.</p>
+      <a class="cta-btn" href="/">Create your own appraisal at avalor.co.uk</a>
+    </div>
+
+    <div class="footer-note">Shared via Avalor · Read-only summary · This is not financial or professional advice</div>`;
+}
+
+(async () => {
+  const token = new URLSearchParams(window.location.search).get('t');
+  if (!token) return showError('No share link provided.');
+
+  try {
+    const resp = await fetch(`/api/shared-deal?token=${encodeURIComponent(token)}`);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      return showError(body.error || 'This share link is invalid or has been disabled.');
+    }
+    const deal = await resp.json();
+    render(deal);
+  } catch (err) {
+    showError('Could not load this appraisal — please try again later.');
+  }
+})();
+</script>
+</body>
+</html>

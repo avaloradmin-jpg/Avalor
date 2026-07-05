@@ -52,6 +52,8 @@ create table if not exists saved_deals (
   growth_rate numeric,
   verdict text,
   appraisal_data text,
+  share_token text unique,
+  share_enabled boolean not null default false,
   created_at timestamptz default now()
 );
 
@@ -71,9 +73,21 @@ create policy "Users can delete own deals"
   on saved_deals for delete
   using (auth.uid() = user_id);
 
+-- Only Professional-plan users can turn sharing on (share_enabled = true) for
+-- their own deals — enforced here so it holds even if the app's UI is bypassed.
 create policy "Users can update own deals"
   on saved_deals for update
-  using (auth.uid() = user_id);
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and (
+      share_enabled = false
+      or exists (
+        select 1 from profiles
+        where profiles.id = auth.uid() and profiles.plan = 'professional'
+      )
+    )
+  );
 
 -- ─── AUTO-UPDATE TIMESTAMP ───────────────────────────────────────────────────
 create or replace function update_updated_at()

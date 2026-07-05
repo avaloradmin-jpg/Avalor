@@ -105,6 +105,38 @@ async function updateSupabasePlan(userId, plan) {
   });
 }
 
+// Never add user_id, id, or share_token here — this list is returned to anonymous visitors.
+const SHARED_DEAL_PUBLIC_FIELDS = [
+  'postcode', 'name', 'dev_type', 'prop_type', 'region',
+  'purchase', 'floor_area', 'units', 'gdv', 'build_cost', 'sdlt',
+  'finance', 'profit', 'margin', 'rlv', 'growth_rate', 'verdict',
+  'appraisal_data', 'created_at'
+];
+
+// Look up a shared deal by token using the service-role key (mirrors api/shared-deal.js)
+async function fetchSharedDeal(token) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: SUPABASE_URL,
+      path: `/rest/v1/saved_deals?share_token=eq.${encodeURIComponent(token)}&share_enabled=eq.true&select=${SHARED_DEAL_PUBLIC_FIELDS.join(',')}`,
+      method: 'GET',
+      headers: {
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Accept': 'application/json'
+      },
+    };
+    https.get(options, upstream => {
+      let body = '';
+      upstream.on('data', c => { body += c; });
+      upstream.on('end', () => {
+        try { resolve({ status: upstream.statusCode, data: JSON.parse(body) }); }
+        catch (err) { reject(err); }
+      });
+    }).on('error', reject);
+  });
+}
+
 function jsonResponse(res, status, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -185,6 +217,21 @@ http.createServer(async (req, res) => {
   }
   if (req.url.startsWith('/api/planwire')) {
     return proxyRequest(req, res, PLANWIRE_BASE, upstreamPathFromQuery(req), { 'X-API-Key': PLANWIRE_KEY });
+  }
+
+  // ── Public shared-deal lookup (mirrors api/shared-deal.js) ──────────────────
+  if (req.url.startsWith('/api/shared-deal')) {
+    const token = new URL(req.url, 'http://localhost').searchParams.get('token');
+    if (!token) return jsonResponse(res, 400, { error: 'Missing token' });
+    try {
+      const { status, data } = await fetchSharedDeal(token);
+      if (status !== 200 || !Array.isArray(data) || data.length === 0) {
+        return jsonResponse(res, 404, { error: 'This share link is invalid or has been disabled' });
+      }
+      return jsonResponse(res, 200, data[0]);
+    } catch (err) {
+      return jsonResponse(res, 502, { error: err.message });
+    }
   }
 
   // ── Static file serving ─────────────────────────────────────────────────────
