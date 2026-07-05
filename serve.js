@@ -56,9 +56,17 @@ function proxyRequest(req, res, hostname, upstreamPath, extraHeaders) {
   req.pipe(proxy);
 }
 
+// Reconstruct the upstream path from a ?path= query param (mirrors api/homedata.js and api/planwire.js)
+function upstreamPathFromQuery(req) {
+  const url = new URL(req.url, 'http://localhost');
+  const subPath = (url.searchParams.get('path') || '').replace(/^\/+/, '');
+  url.searchParams.delete('path');
+  const qs = url.searchParams.toString();
+  return '/' + subPath + (qs ? '?' + qs : '');
+}
+
 function proxyHomedata(req, res) {
-  const upstreamPath = req.url.replace('/api/homedata', '');
-  proxyRequest(req, res, HOMEDATA_BASE, upstreamPath, { 'Authorization': `Api-Key ${HOMEDATA_KEY}` });
+  proxyRequest(req, res, HOMEDATA_BASE, upstreamPathFromQuery(req), { 'Authorization': `Api-Key ${HOMEDATA_KEY}` });
 }
 
 // Collect raw request body as a Buffer (needed for Stripe webhook signature verification)
@@ -172,12 +180,11 @@ http.createServer(async (req, res) => {
   }
 
   // ── Existing proxy routes ───────────────────────────────────────────────────
-  if (req.url.startsWith('/api/homedata/')) {
+  if (req.url.startsWith('/api/homedata')) {
     return proxyHomedata(req, res);
   }
-  if (req.url.startsWith('/api/planwire/')) {
-    const upstreamPath = req.url.replace('/api/planwire', '');
-    return proxyRequest(req, res, PLANWIRE_BASE, upstreamPath, { 'X-API-Key': PLANWIRE_KEY });
+  if (req.url.startsWith('/api/planwire')) {
+    return proxyRequest(req, res, PLANWIRE_BASE, upstreamPathFromQuery(req), { 'X-API-Key': PLANWIRE_KEY });
   }
 
   // ── Static file serving ─────────────────────────────────────────────────────

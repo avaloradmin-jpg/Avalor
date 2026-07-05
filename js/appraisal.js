@@ -57,7 +57,7 @@ function epcScoreToBand(score) {
 
 async function resolveHomedataAddresses(postcode) {
   const pcClean = postcode.replace(/\s+/g, '').toUpperCase();
-  const resp = await fetch(`${HOMEDATA_PROXY}/address/postcode/${pcClean}/`, {
+  const resp = await fetch(`${HOMEDATA_PROXY}?path=${encodeURIComponent('address/postcode/' + pcClean + '/')}`, {
     signal: AbortSignal.timeout(6000)
   });
   if (!resp.ok) throw new Error('Homedata postcode lookup failed: ' + resp.status);
@@ -72,7 +72,7 @@ async function fetchEpcData(addresses) {
   for (const addr of addresses.slice(0, 5)) {
     const uprn = addr.uprn;
     if (!uprn) continue;
-    const resp = await fetch(`${HOMEDATA_PROXY}/epc-checker/${uprn}/`, {
+    const resp = await fetch(`${HOMEDATA_PROXY}?path=${encodeURIComponent('epc-checker/' + uprn + '/')}`, {
       signal: AbortSignal.timeout(5000)
     });
     if (!resp.ok) continue;
@@ -88,7 +88,7 @@ const PLANWIRE_PROXY = '/api/planwire';
 const FLOOD_LABEL_RANK = { 'Very High': 4, 'High': 3, 'Medium': 2, 'Low': 1 };
 
 async function fetchFloodRisk(uprn) {
-  const resp = await fetch(`${HOMEDATA_PROXY}/risks/flood/?uprn=${uprn}`, {
+  const resp = await fetch(`${HOMEDATA_PROXY}?path=${encodeURIComponent('risks/flood/')}&uprn=${uprn}`, {
     signal: AbortSignal.timeout(6000)
   });
   if (!resp.ok) throw new Error('Flood risk lookup failed: ' + resp.status);
@@ -105,7 +105,7 @@ async function fetchConservationArea(lat, lng) {
 }
 
 async function fetchPlanwireData(lat, lng) {
-  const url = `${PLANWIRE_PROXY}/v1/applications/nearby?lat=${lat}&lng=${lng}&radius_km=0.5&limit=10`;
+  const url = `${PLANWIRE_PROXY}?path=${encodeURIComponent('v1/applications/nearby')}&lat=${lat}&lng=${lng}&radius_km=0.5&limit=10`;
   const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
   if (!resp.ok) throw new Error('PlanWire API error ' + resp.status);
   const data = await resp.json();

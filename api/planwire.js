@@ -1,17 +1,20 @@
-// Force clean rebuild — stale routing cache was blocking multi-segment catch-all matches
 const https = require('https');
+const { URL } = require('url');
 
 module.exports = function handler(req, res) {
-  // Strip the function's own route prefix from the raw request URL
-  const upstreamPath = req.url.replace(/^\/api\/homedata/, '') || '/';
+  const url = new URL(req.url, 'http://localhost');
+  const subPath = (url.searchParams.get('path') || '').replace(/^\/+/, '');
+  url.searchParams.delete('path');
+  const qs = url.searchParams.toString();
+  const upstreamPath = '/' + subPath + (qs ? '?' + qs : '');
 
   const options = {
-    hostname: 'api.homedata.co.uk',
+    hostname: 'api.planwire.io',
     path: upstreamPath,
     method: req.method,
     headers: {
       'Accept': 'application/json',
-      'Authorization': `Api-Key ${process.env.HOMEDATA_API_KEY}`
+      'X-API-Key': process.env.PLANWIRE_API_KEY
     }
   };
 
