@@ -85,15 +85,17 @@ async function fetchEpcData(addresses) {
 }
 
 const PLANWIRE_PROXY = '/api/planwire';
-const FLOOD_LABEL_RANK = { 'Very High': 4, 'High': 3, 'Medium': 2, 'Low': 1 };
 
-async function fetchFloodRisk(uprn) {
-  const resp = await fetch(`${HOMEDATA_PROXY}?path=${encodeURIComponent('risks/flood/')}&uprn=${uprn}`, {
-    signal: AbortSignal.timeout(6000)
-  });
+// Environment Agency Flood Zone (1/2/3) via planning.data.gov.uk — free, same source as conservation area
+async function fetchFloodRisk(lat, lng) {
+  const url = `https://www.planning.data.gov.uk/entity.json?dataset=flood-risk-zone&latitude=${lat}&longitude=${lng}&limit=10`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(6000) });
   if (!resp.ok) throw new Error('Flood risk lookup failed: ' + resp.status);
   const data = await resp.json();
-  return data.results ?? [];
+  const levels = (data.entities ?? [])
+    .map(e => parseInt(e['flood-risk-level'], 10))
+    .filter(n => !isNaN(n));
+  return levels.length ? Math.max(...levels) : 1;
 }
 
 async function fetchConservationArea(lat, lng) {
@@ -133,14 +135,6 @@ async function fetchPlanwireData(lat, lng) {
     refused: refused.length,
     mostRecentRefusalYear: mostRecentRefusal ? mostRecentRefusal.getFullYear() : null
   };
-}
-
-function worstFloodLabel(results) {
-  if (!results.length) return null;
-  return results.reduce((worst, r) => {
-    const rank = FLOOD_LABEL_RANK[r.label] ?? 0;
-    return rank > (FLOOD_LABEL_RANK[worst] ?? 0) ? r.label : worst;
-  }, null);
 }
 
 async function fetchLandRegistryComps(postcode, devType) {
@@ -264,7 +258,7 @@ async function runAppraisal() {
   let usedFallback = false;
   let fallbackReason = '';
   let epcResult = null;
-  let floodResults = null;
+  let floodZone = null;
   let planwireResult = null;
   let conservationArea = null;
 
@@ -284,18 +278,17 @@ async function runAppraisal() {
 
   // EPC, flood, and PlanWire all fire in parallel
   const addresses = addrOutcome.status === 'fulfilled' ? addrOutcome.value : [];
-  const uprn = addresses[0]?.uprn;
   const lrCoords = lrOutcome.status === 'fulfilled' ? lrOutcome.value : null;
 
   const [epcOutcome, floodOutcome, planwireOutcome, conservationOutcome] = await Promise.allSettled([
     addresses.length ? fetchEpcData(addresses) : Promise.reject('No addresses'),
-    uprn ? fetchFloodRisk(uprn) : Promise.reject('No UPRN'),
+    lrCoords ? fetchFloodRisk(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
     lrCoords ? fetchPlanwireData(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
     lrCoords ? fetchConservationArea(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords')
   ]);
 
   if (epcOutcome.status === 'fulfilled') epcResult = epcOutcome.value;
-  if (floodOutcome.status === 'fulfilled') floodResults = floodOutcome.value;
+  if (floodOutcome.status === 'fulfilled') floodZone = floodOutcome.value;
   if (planwireOutcome.status === 'fulfilled') planwireResult = planwireOutcome.value;
   if (conservationOutcome.status === 'fulfilled') conservationArea = conservationOutcome.value;
 
@@ -404,7 +397,7 @@ async function runAppraisal() {
 
   buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin);
   buildSensTable(gdv, buildMid, purchase, sdlt, finance);
-  buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult, floodResults, planwireResult, conservationArea);
+  buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult, floodZone, planwireResult, conservationArea);
 
   const growthWidth = Math.min(90, Math.max(10, (Math.abs(growth) / 10) * 100));
   document.getElementById('growth-fill').style.width = growthWidth + '%';
@@ -495,7 +488,7 @@ function buildSensTable(gdv, buildMid, purchase, sdlt, finance) {
   document.getElementById('sens-body').innerHTML = html;
 }
 
-function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback, epcResult, floodResults, planwireResult, conservationArea) {
+function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback, epcResult, floodZone, planwireResult, conservationArea) {
   const areaLabel = district || postcode.split(' ')[0];
   document.getElementById('snapshot-postcode').textContent = areaLabel;
 
@@ -532,25 +525,18 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
   // Flood flag
   const floodEl = document.getElementById('flag-flood');
   if (floodEl) {
-    if (floodResults === null) {
+    if (floodZone === null) {
       floodEl.className = 'flag flag-warn';
       floodEl.textContent = 'Not available';
+    } else if (floodZone === 1) {
+      floodEl.className = 'flag flag-safe';
+      floodEl.textContent = 'Zone 1 — low probability of flooding';
+    } else if (floodZone === 2) {
+      floodEl.className = 'flag flag-warn';
+      floodEl.textContent = 'Zone 2 — medium probability of flooding';
     } else {
-      const worst = worstFloodLabel(floodResults);
-      if (!worst) {
-        floodEl.className = 'flag flag-safe';
-        floodEl.textContent = 'Zone 1 — very low risk';
-      } else if (worst === 'Low') {
-        floodEl.className = 'flag flag-warn';
-        floodEl.textContent = 'Zone 2 — low risk';
-      } else if (worst === 'Medium') {
-        floodEl.className = 'flag flag-warn';
-        floodEl.textContent = 'Zone 3 — medium risk';
-      } else {
-        // High or Very High
-        floodEl.className = 'flag flag-risk';
-        floodEl.textContent = `Zone 3 — ${worst.toLowerCase()} risk`;
-      }
+      floodEl.className = 'flag flag-risk';
+      floodEl.textContent = 'Zone 3 — high probability of flooding';
     }
   }
 
