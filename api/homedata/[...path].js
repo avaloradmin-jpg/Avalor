@@ -1,10 +1,8 @@
 const https = require('https');
 
 module.exports = function handler(req, res) {
-  // Reconstruct upstream path from catch-all segments + original query string
-  const segments = Array.isArray(req.query.path) ? req.query.path : [req.query.path];
-  const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  const upstreamPath = '/' + segments.join('/') + qs;
+  // Strip the function's own route prefix from the raw request URL
+  const upstreamPath = req.url.replace(/^\/api\/homedata/, '') || '/';
 
   const options = {
     hostname: 'api.homedata.co.uk',
