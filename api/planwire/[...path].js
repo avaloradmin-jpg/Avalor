@@ -1,3 +1,4 @@
+// Force clean rebuild — stale routing cache was blocking multi-segment catch-all matches
 const https = require('https');
 
 module.exports = function handler(req, res) {
