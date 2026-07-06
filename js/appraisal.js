@@ -181,7 +181,7 @@ function median(arr) {
   return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
 }
 
-function calcSDLT(price) {
+function calcSdltBanded(price) {
   let sdlt = 0;
   let remaining = price;
   const bands = [
@@ -197,8 +197,12 @@ function calcSDLT(price) {
     remaining -= chunk;
     if (remaining <= 0) break;
   }
-  sdlt += price * 0.03; // Additional dwelling surcharge
-  return Math.round(sdlt);
+  return sdlt;
+}
+
+function calcSDLT(price) {
+  const surcharge = price * 0.05; // Additional dwelling surcharge — 5% since 31 Oct 2024 (was 3%)
+  return Math.round(calcSdltBanded(price) + surcharge);
 }
 
 function fmt(n) {
@@ -207,6 +211,30 @@ function fmt(n) {
 
 function fmtPct(n) {
   return (Math.round(n * 10) / 10) + '%';
+}
+
+function getRlvNote(rlv, purchase) {
+  const cushion = purchase > 0 ? (rlv - purchase) / purchase : 0;
+  if (cushion >= 0.10) {
+    return { cls: '', text: "You're paying comfortably below what the site can support at a healthy margin — there's cushion here if costs run over." };
+  } else if (cushion >= -0.05) {
+    return { cls: '', text: "You're paying close to what this site is actually worth at a healthy margin — little room left to renegotiate." };
+  } else {
+    return { cls: 'risk', text: "You're paying more than the residual value supports — this is what's compressing your margin, not the build cost." };
+  }
+}
+
+function getSdltNote(sdlt, purchase) {
+  const pct = purchase > 0 ? (sdlt / purchase) * 100 : 0;
+  return `That's ${fmtPct(pct)} of your purchase price — cash due at completion, on top of your deposit and fees. Includes the 5% additional dwelling surcharge, which applies when you already own a property — one of the most commonly overlooked costs in development finance.`;
+}
+
+function getFinanceNote(finance, gdv) {
+  const pctOfGdv = gdv > 0 ? (finance / gdv) * 100 : 0;
+  if (pctOfGdv > 6) {
+    return { cls: 'warn', text: "That's a meaningful chunk of GDV — every month you cut from the build programme drops straight to profit." };
+  }
+  return { cls: '', text: 'Modest relative to GDV at this build period — a slipping timeline is a bigger risk to this figure than the interest rate is.' };
 }
 
 function getMargin(gdv, buildMid, purchase, sdlt, finance, gdvVar, buildVar) {
@@ -529,13 +557,25 @@ async function runAppraisal() {
   document.getElementById('r-rlv').textContent = fmt(rlv);
   document.getElementById('r-bcis').textContent = `£${bcis.low.toLocaleString()} – £${bcis.high.toLocaleString()}/m²`;
 
-  // SDLT breakdown
-  const band1 = Math.min(purchase, 250000) * 0.03;
-  const band2 = Math.max(0, Math.min(purchase, 925000) - 250000) * 0.08;
-  const addl = purchase * 0.03;
-  document.getElementById('s1').textContent = fmt(band1);
-  document.getElementById('s2').textContent = fmt(band2);
-  document.getElementById('s3').textContent = fmt(addl);
+  document.getElementById('r-sdlt-note').textContent = getSdltNote(sdlt, purchase);
+
+  const financeNote = getFinanceNote(finance, gdv);
+  const financeNoteEl = document.getElementById('r-finance-note');
+  financeNoteEl.className = 'metric-tile-sub' + (financeNote.cls ? ' ' + financeNote.cls : '');
+  financeNoteEl.textContent = financeNote.text;
+
+  const rlvNote = getRlvNote(rlv, purchase);
+  const rlvNoteEl = document.getElementById('r-rlv-note');
+  rlvNoteEl.className = 'metric-tile-sub' + (rlvNote.cls ? ' ' + rlvNote.cls : '');
+  rlvNoteEl.textContent = rlvNote.text;
+
+  // SDLT breakdown — split the real banded calculation at £250k so the rows sum to the actual total
+  const bandedTo250k = calcSdltBanded(Math.min(purchase, 250000));
+  const bandedAbove250k = calcSdltBanded(purchase) - bandedTo250k;
+  const surcharge = purchase * 0.05;
+  document.getElementById('s1').textContent = fmt(bandedTo250k);
+  document.getElementById('s2').textContent = fmt(bandedAbove250k);
+  document.getElementById('s3').textContent = fmt(surcharge);
   document.getElementById('s-total').textContent = fmt(sdlt);
 
   // Verdict
@@ -549,19 +589,19 @@ async function runAppraisal() {
     verdictBox.className = 'verdict viable';
     verdictIcon.className = 'ti ti-circle-check';
     verdictTitle.textContent = 'Viable';
-    verdictDesc.textContent = 'Profit margin exceeds 20% threshold — deal stacks up at current assumptions.';
+    verdictDesc.textContent = "Healthy margin — you've got room to negotiate the purchase price down further, or absorb a cost overrun without the deal falling over.";
     marginEl.style.color = 'var(--green)';
   } else if (margin >= 12) {
     verdictBox.className = 'verdict marginal';
     verdictIcon.className = 'ti ti-alert-triangle';
     verdictTitle.textContent = 'Marginal';
-    verdictDesc.textContent = 'Profit margin between 12–20% — review assumptions carefully before committing.';
+    verdictDesc.textContent = 'This only works if the build and sale both go roughly to plan. Treat this margin as your walk-away point, not a buffer.';
     marginEl.style.color = 'var(--amber)';
   } else {
     verdictBox.className = 'verdict not-viable';
     verdictIcon.className = 'ti ti-circle-x';
     verdictTitle.textContent = 'Not viable';
-    verdictDesc.textContent = 'Profit margin below 12% — deal unlikely to work at current purchase price.';
+    verdictDesc.textContent = "At this price you're financing a loss, not a project. Renegotiate the purchase price before you spend anything on this deal.";
     marginEl.style.color = 'var(--red)';
   }
 
@@ -665,6 +705,13 @@ function buildSensTable(gdv, buildMid, purchase, sdlt, finance) {
   document.getElementById('sens-body').innerHTML = html;
 }
 
+function setRiskNote(id, cls, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'risk-item-note' + (cls ? ' ' + cls : '');
+  el.textContent = text;
+}
+
 function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback, epcResult, floodZone, planwireResult, conservationArea) {
   const areaLabel = district || postcode.split(' ')[0];
   document.getElementById('snapshot-postcode').textContent = areaLabel;
@@ -705,15 +752,19 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
     if (floodZone === null) {
       floodEl.className = 'flag flag-warn';
       floodEl.textContent = 'Not available';
+      setRiskNote('flag-flood-note', '', "We couldn't confirm this from Environment Agency data — check the long-term flood risk report for this postcode before proceeding.");
     } else if (floodZone === 1) {
       floodEl.className = 'flag flag-safe';
       floodEl.textContent = 'Zone 1 — low probability of flooding';
+      setRiskNote('flag-flood-note', '', 'Standard buildings insurance covers this without issue — no flood survey needed for lending.');
     } else if (floodZone === 2) {
       floodEl.className = 'flag flag-warn';
       floodEl.textContent = 'Zone 2 — medium probability of flooding';
+      setRiskNote('flag-flood-note', 'warn', "Most lenders will still fund this, but expect a flood survey requirement and a higher insurance premium — get a quote before exchange, not after.");
     } else {
       floodEl.className = 'flag flag-risk';
       floodEl.textContent = 'Zone 3 — high probability of flooding';
+      setRiskNote('flag-flood-note', 'risk', 'This will complicate both lending and insurance — get a flood risk assessment and an indicative insurance quote before you exchange, not after.');
     }
   }
 
@@ -726,6 +777,7 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
       planningEl.textContent = 'Not available';
       refusalsEl.className = 'flag flag-warn';
       refusalsEl.textContent = 'Not available';
+      setRiskNote('flag-planning-note', '', "No local planning history to hand — lean on a local planning consultant's read of this authority before you rely on precedent.");
     } else {
       const { total, granted, refused, mostRecentRefusalYear } = planwireResult;
       if (total === 0) {
@@ -733,10 +785,18 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
         planningEl.textContent = 'No decisions nearby';
         refusalsEl.className = 'flag flag-safe';
         refusalsEl.textContent = 'None found';
+        setRiskNote('flag-planning-note', '', "No planning history nearby to benchmark against — treat this as an unknown rather than a green light.");
       } else {
         const approvalRate = granted / total;
         planningEl.className = approvalRate >= 0.7 ? 'flag flag-safe' : approvalRate >= 0.4 ? 'flag flag-warn' : 'flag flag-risk';
         planningEl.textContent = `${granted} of ${total} approved`;
+        if (approvalRate >= 0.7) {
+          setRiskNote('flag-planning-note', '', 'This authority is granting most applications nearby — precedent is on your side.');
+        } else if (approvalRate >= 0.4) {
+          setRiskNote('flag-planning-note', 'warn', "Roughly a coin flip locally — don't treat planning consent as a given, build in time and a fallback scheme.");
+        } else {
+          setRiskNote('flag-planning-note', 'risk', 'This authority is refusing more applications nearby than it grants — get pre-application advice before you commit.');
+        }
         if (refused === 0) {
           refusalsEl.className = 'flag flag-safe';
           refusalsEl.textContent = 'None in last 2 years';
@@ -756,12 +816,15 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
     if (conservationArea === null) {
       conservationEl.className = 'flag flag-warn';
       conservationEl.textContent = 'Not available';
+      setRiskNote('flag-conservation-note', '', "Not confirmed — check the local authority's conservation area map before assuming either way.");
     } else if (conservationArea) {
       conservationEl.className = 'flag flag-risk';
       conservationEl.textContent = 'Yes — additional controls apply';
+      setRiskNote('flag-conservation-note', 'risk', 'Expect tighter constraints on materials and massing — budget extra design and consultation time.');
     } else {
       conservationEl.className = 'flag flag-safe';
       conservationEl.textContent = 'No';
+      setRiskNote('flag-conservation-note', '', 'No extra conservation constraints here — standard permitted development rules apply.');
     }
   }
 
