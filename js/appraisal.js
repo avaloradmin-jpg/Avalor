@@ -220,6 +220,165 @@ function getMargin(gdv, buildMid, purchase, sdlt, finance, gdvVar, buildVar) {
   return (profit / g) * 100;
 }
 
+// --- Avalor Score ---
+
+function clamp(n, lo, hi) {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function scoreProfitability(margin) {
+  return clamp((margin / 25) * 100, 0, 100);
+}
+
+const PLANNING_REFURB_TYPES = ['Light refurbishment', 'Full refurbishment'];
+const CONSERVATION_SENSITIVE_TYPES = ['New build', 'Loft conversion', 'Flat conversion'];
+
+function scorePlanningRisk(planwireResult, conservationArea, devType) {
+  let score;
+  if (planwireResult && planwireResult.total > 0) {
+    score = (planwireResult.granted / planwireResult.total) * 100;
+    score -= Math.min(30, planwireResult.refused * 10);
+  } else {
+    score = 60; // no local decisions to go on — neutral default
+  }
+
+  // New build almost always needs a full planning application, regardless of location.
+  // HMO's real planning friction (Article 4 directions) is location-specific and is already
+  // captured by the live approval/refusal rate above, so it doesn't get a second blanket penalty here.
+  if (PLANNING_REFURB_TYPES.includes(devType)) score += 10;
+  else if (devType === 'New build') score -= 10;
+
+  if (conservationArea === true && CONSERVATION_SENSITIVE_TYPES.includes(devType)) score -= 10;
+
+  return clamp(score, 0, 100);
+}
+
+function scoreFloodEnvironmental(floodZone) {
+  if (floodZone === 1) return 100;
+  if (floodZone === 2) return 55;
+  if (floodZone === 3) return 15;
+  return 60; // unknown — neutral default
+}
+
+const CONSTRUCTION_BASE_BY_TYPE = {
+  'Light refurbishment': 90,
+  'Full refurbishment':  75,
+  'Loft conversion':     70,
+  'Flat conversion':     65,
+  'HMO conversion':      55,
+  'New build':           45
+};
+
+function scoreConstructionRisk(devType, bcis, maxBuildOverrun) {
+  const base = CONSTRUCTION_BASE_BY_TYPE[devType] ?? 65;
+  const uncertaintyPenalty = ((bcis.high - bcis.low) / bcis.mid) * 25;
+  const headroomBonus = (maxBuildOverrun ?? 0) * 100;
+  return clamp(base - uncertaintyPenalty + headroomBonus, 0, 100);
+}
+
+function scoreMarketDemand(growth, compCount, usedFallback) {
+  const growthScore = clamp(50 + growth * 5, 0, 100);
+  const liquidityScore = clamp((compCount / 15) * 100, 0, 100);
+  const combined = growthScore * 0.6 + liquidityScore * 0.4;
+  return usedFallback ? Math.min(50, combined) : combined;
+}
+
+function scoreExitStrategy(maxGdvDrop, rlv, purchase, epcResult) {
+  const survivableDrop = -(maxGdvDrop ?? 0); // positive = % GDV drop the deal survives
+  const gdvScore = clamp((survivableDrop / 0.20) * 100, 0, 100);
+
+  const cushionRatio = purchase > 0 ? (rlv - purchase) / purchase : 0;
+  const rlvScore = clamp(50 + cushionRatio * 150, 0, 100);
+
+  const band = epcResult?.band?.toUpperCase();
+  let epcScore;
+  if (!band) epcScore = 50;
+  else if ('ABC'.includes(band)) epcScore = 100;
+  else if (band === 'D') epcScore = 60;
+  else if (band === 'E') epcScore = 30;
+  else epcScore = 0; // F/G — largely unmortgageable without upgrade
+
+  return clamp(gdvScore * 0.45 + rlvScore * 0.25 + epcScore * 0.30, 0, 100);
+}
+
+function computeAvalorScore({ margin, rlv, purchase, growth, compCount, usedFallback, floodZone, planwireResult, conservationArea, devType, bcis, maxBuildOverrun, maxGdvDrop, epcResult }) {
+  const profitability = scoreProfitability(margin);
+  const planningRisk = scorePlanningRisk(planwireResult, conservationArea, devType);
+  const floodEnvironmental = scoreFloodEnvironmental(floodZone);
+  const constructionRisk = scoreConstructionRisk(devType, bcis, maxBuildOverrun);
+  const marketDemand = scoreMarketDemand(growth, compCount, usedFallback);
+  const exitStrategy = scoreExitStrategy(maxGdvDrop, rlv, purchase, epcResult);
+
+  const overall =
+    profitability      * 0.30 +
+    planningRisk       * 0.15 +
+    floodEnvironmental * 0.15 +
+    constructionRisk   * 0.15 +
+    marketDemand        * 0.15 +
+    exitStrategy        * 0.10;
+
+  return {
+    overall: Math.round(overall),
+    categories: {
+      profitability:      Math.round(profitability),
+      planningRisk:       Math.round(planningRisk),
+      floodEnvironmental: Math.round(floodEnvironmental),
+      constructionRisk:   Math.round(constructionRisk),
+      marketDemand:       Math.round(marketDemand),
+      exitStrategy:       Math.round(exitStrategy)
+    }
+  };
+}
+
+const SCORE_CATEGORY_META = [
+  { key: 'profitability',      label: 'Profitability' },
+  { key: 'planningRisk',       label: 'Planning Risk' },
+  { key: 'floodEnvironmental', label: 'Flood & Environmental Risk' },
+  { key: 'constructionRisk',   label: 'Construction Risk' },
+  { key: 'marketDemand',       label: 'Market Demand' },
+  { key: 'exitStrategy',       label: 'Exit Strategy' }
+];
+
+function scoreColor(score) {
+  if (score >= 70) return '#1D9E75';
+  if (score >= 50) return '#BA7517';
+  return '#A32D2D';
+}
+
+function renderAvalorScore(scoreResult) {
+  const { overall, categories } = scoreResult;
+  const color = scoreColor(overall);
+
+  const ring = document.getElementById('score-ring');
+  ring.style.setProperty('--score-pct', overall);
+  ring.style.setProperty('--score-color', color);
+  document.getElementById('score-overall').textContent = overall;
+
+  const band = document.getElementById('score-band');
+  const bandDesc = document.getElementById('score-band-desc');
+  band.style.color = color;
+  if (overall >= 70) {
+    band.textContent = 'Strong deal';
+    bandDesc.textContent = 'Scores well across profitability and risk factors, with limited exposure across the categories below.';
+  } else if (overall >= 50) {
+    band.textContent = 'Moderate deal';
+    bandDesc.textContent = 'Workable, but one or more risk categories below need closer review before committing.';
+  } else {
+    band.textContent = 'Weak deal';
+    bandDesc.textContent = 'Significant risk or profitability concerns across multiple categories — review carefully.';
+  }
+
+  document.getElementById('score-cat-list').innerHTML = SCORE_CATEGORY_META.map(meta => {
+    const val = categories[meta.key];
+    return `
+      <div class="score-cat-row">
+        <div class="score-cat-label">${meta.label}</div>
+        <div class="score-cat-track"><div class="score-cat-fill" style="width:${val}%;background:${scoreColor(val)}"></div></div>
+        <div class="score-cat-value">${val}</div>
+      </div>`;
+  }).join('');
+}
+
 function showDataBanner(msg) {
   const el = document.getElementById('data-banner');
   el.style.display = 'flex';
@@ -336,12 +495,22 @@ async function runAppraisal() {
   const profit = gdv - totalCosts;
   const margin = (profit / gdv) * 100;
   const rlv = gdv - buildMid - (gdv * 0.20) - agentFees - profFees;
+  const resilience = computeResilience(gdv, buildMid, purchase, sdlt, finance);
+
+  const score = computeAvalorScore({
+    margin, rlv, purchase, growth, compCount: last12.length, usedFallback,
+    floodZone, planwireResult, conservationArea, devType, bcis,
+    maxBuildOverrun: resilience.maxBuildOverrun, maxGdvDrop: resilience.maxGdvDrop,
+    epcResult
+  });
 
   currentAppraisal = {
     postcode, devType, region, purchase, area, units,
     gdv, buildMid, sdlt, finance, profit, margin, rlv,
     bcis, growth, ppm, compCount: last12.length, district, usedFallback,
-    epcResult, floodZone, planwireResult, conservationArea
+    epcResult, floodZone, planwireResult, conservationArea,
+    maxBuildOverrun: resilience.maxBuildOverrun, maxGdvDrop: resilience.maxGdvDrop,
+    score
   };
 
   btn.innerHTML = 'Run appraisal';
@@ -396,9 +565,10 @@ async function runAppraisal() {
     marginEl.style.color = 'var(--red)';
   }
 
-  buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin);
+  buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin, resilience);
   buildSensTable(gdv, buildMid, purchase, sdlt, finance);
   buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult, floodZone, planwireResult, conservationArea);
+  renderAvalorScore(score);
 
   const growthWidth = Math.min(90, Math.max(10, (Math.abs(growth) / 10) * 100));
   document.getElementById('growth-fill').style.width = growthWidth + '%';
@@ -413,7 +583,7 @@ async function runAppraisal() {
   document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, baseMargin) {
+function computeResilience(gdv, buildMid, purchase, sdlt, finance) {
   const gdvVars = [-0.20, -0.10, 0, 0.10, 0.20];
   const buildVars = [-0.20, -0.10, 0, 0.10, 0.20];
 
@@ -428,6 +598,12 @@ function buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, baseMarg
     const m = getMargin(gdv, buildMid, purchase, sdlt, finance, gv, 0);
     if (m >= 12) maxGdvDrop = gv;
   }
+
+  return { maxBuildOverrun, maxGdvDrop };
+}
+
+function buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, baseMargin, resilience) {
+  const { maxBuildOverrun, maxGdvDrop } = resilience;
 
   const box = document.getElementById('resilience-box');
   const icon = document.getElementById('resilience-icon');
