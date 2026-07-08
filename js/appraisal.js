@@ -40,6 +40,36 @@ const DEV_TYPE_TO_PPD_TYPE = {
   'New build':           null
 };
 
+// --- Development-type planning intelligence keyword map ---
+// Case-insensitive substring match against PlanWire's `description` field.
+// Starting point, not exhaustive — extend as real description patterns turn up.
+// Refurbishment types intentionally have no entry here: most refurb work is
+// permitted development and doesn't generate planning applications to match against.
+const DEV_TYPE_KEYWORDS = {
+  'HMO conversion': [
+    'hmo', 'house in multiple occupation', 'c3 to c4', 'c4 use', 'class c4',
+    'sui generis hmo', 'multiple occupation'
+  ],
+  'Flat conversion': [
+    'conversion to flats', 'conversion into flats', 'convert to flats', 'subdivision',
+    'self-contained flats', 'self contained flat', 'conversion of dwelling',
+    'form 2 flats', 'form two flats', 'creation of flats', 'conversion to apartments',
+    'conversion into apartments', '2 flats', 'two flats', 'residential units', 'x flats'
+  ],
+  'Loft conversion': [
+    'loft conversion', 'dormer', 'roof extension', 'hip to gable',
+    'mansard', 'attic conversion'
+    // 'rooflight' / 'roof light' deliberately excluded — live-tested and found to
+    // false-positive heavily on ordinary single-storey rear extensions with skylights,
+    // which are unrelated to loft conversions
+  ],
+  'New build': [
+    'new build', 'new dwelling', 'construction of dwelling', 'demolition and erection',
+    'residential development', 'new residential', 'erection of dwelling',
+    'erection of a dwelling', 'erection of a new dwelling'
+  ]
+};
+
 const PPD_API = 'https://landregistry.data.gov.uk/data/ppi/transaction-record.json';
 const POSTCODES_API = 'https://api.postcodes.io/postcodes/';
 const HOMEDATA_PROXY = '/api/homedata';
@@ -137,6 +167,73 @@ async function fetchPlanwireData(lat, lng) {
   };
 }
 
+// --- Development-type planning intelligence ---
+// Reuses the same PlanWire proxy path as fetchPlanwireData above, just with a
+// parameterised radius_km and no fixed 2-year window (the dev-type card works
+// off whatever the current radius step returns).
+
+async function fetchPlanwireApps(lat, lng, radiusKm) {
+  const url = `${PLANWIRE_PROXY}?path=${encodeURIComponent('v1/applications/nearby')}&lat=${lat}&lng=${lng}&radius_km=${radiusKm}&limit=100`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  if (!resp.ok) throw new Error('PlanWire API error ' + resp.status);
+  const data = await resp.json();
+  return data.data ?? [];
+}
+
+function matchesDevType(description, devType) {
+  const keywords = DEV_TYPE_KEYWORDS[devType];
+  if (!keywords || !description) return false;
+  const desc = description.toLowerCase();
+  return keywords.some(k => desc.includes(k));
+}
+
+function classifyPlanningDecision(decision) {
+  if (!decision) return 'pending';
+  if (/refus/i.test(decision)) return 'refused';
+  if (/grant|permit|approv|agreed/i.test(decision)) return 'approved';
+  return 'pending';
+}
+
+function splitByDecision(apps) {
+  let approved = 0, refused = 0, pending = 0;
+  apps.forEach(a => {
+    const c = classifyPlanningDecision(a.decision);
+    if (c === 'approved') approved++;
+    else if (c === 'refused') refused++;
+    else pending++;
+  });
+  const decided = approved + refused;
+  return { approved, refused, pending, decided, approvalRate: decided > 0 ? approved / decided : null };
+}
+
+const PLANWIRE_RADIUS_LADDER_KM = [0.5, 1, 2]; // tier max is 2km — going higher returns a 400
+
+async function fetchDevTypePlanningIntel(lat, lng, devType) {
+  if (PLANNING_REFURB_TYPES.includes(devType)) {
+    const apps = await fetchPlanwireApps(lat, lng, PLANWIRE_RADIUS_LADDER_KM[0]);
+    return { mode: 'refurb', radiusKm: PLANWIRE_RADIUS_LADDER_KM[0], ...splitByDecision(apps) };
+  }
+
+  let matches = [];
+  let radiusUsed = PLANWIRE_RADIUS_LADDER_KM[0];
+
+  for (const radiusKm of PLANWIRE_RADIUS_LADDER_KM) {
+    const apps = await fetchPlanwireApps(lat, lng, radiusKm);
+    matches = apps.filter(a => matchesDevType(a.description, devType));
+    radiusUsed = radiusKm;
+    if (matches.length >= 3) break;
+  }
+
+  return {
+    mode: 'devtype',
+    radiusKm: radiusUsed,
+    radiusExpanded: radiusUsed !== PLANWIRE_RADIUS_LADDER_KM[0],
+    totalMatched: matches.length,
+    matches,
+    ...splitByDecision(matches)
+  };
+}
+
 async function fetchLandRegistryComps(postcode, devType) {
   // Step 1: resolve postcode to district
   const pcClean = postcode.replace(/\s+/g, '');
@@ -207,6 +304,12 @@ function calcSDLT(price) {
 
 function fmt(n) {
   return '£' + Math.round(n).toLocaleString('en-GB');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
 }
 
 function fmtPct(n) {
@@ -448,6 +551,7 @@ async function runAppraisal() {
   let floodZone = null;
   let planwireResult = null;
   let conservationArea = null;
+  let devTypePlanningIntel = null;
 
   // Land Registry and Homedata address lookup run in parallel
   const [lrOutcome, addrOutcome] = await Promise.allSettled([
@@ -467,17 +571,19 @@ async function runAppraisal() {
   const addresses = addrOutcome.status === 'fulfilled' ? addrOutcome.value : [];
   const lrCoords = lrOutcome.status === 'fulfilled' ? lrOutcome.value : null;
 
-  const [epcOutcome, floodOutcome, planwireOutcome, conservationOutcome] = await Promise.allSettled([
+  const [epcOutcome, floodOutcome, planwireOutcome, conservationOutcome, devTypePlanningOutcome] = await Promise.allSettled([
     addresses.length ? fetchEpcData(addresses) : Promise.reject('No addresses'),
     lrCoords ? fetchFloodRisk(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
     lrCoords ? fetchPlanwireData(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
-    lrCoords ? fetchConservationArea(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords')
+    lrCoords ? fetchConservationArea(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
+    lrCoords ? fetchDevTypePlanningIntel(lrCoords.lat, lrCoords.lng, devType) : Promise.reject('No coords')
   ]);
 
   if (epcOutcome.status === 'fulfilled') epcResult = epcOutcome.value;
   if (floodOutcome.status === 'fulfilled') floodZone = floodOutcome.value;
   if (planwireOutcome.status === 'fulfilled') planwireResult = planwireOutcome.value;
   if (conservationOutcome.status === 'fulfilled') conservationArea = conservationOutcome.value;
+  if (devTypePlanningOutcome.status === 'fulfilled') devTypePlanningIntel = devTypePlanningOutcome.value;
 
   // Split into last 12 months and prior 12 months for YoY growth
   const now = new Date();
@@ -536,7 +642,7 @@ async function runAppraisal() {
     postcode, devType, region, purchase, area, units,
     gdv, buildMid, sdlt, finance, profit, margin, rlv,
     bcis, growth, ppm, compCount: last12.length, district, usedFallback,
-    epcResult, floodZone, planwireResult, conservationArea,
+    epcResult, floodZone, planwireResult, conservationArea, devTypePlanningIntel,
     maxBuildOverrun: resilience.maxBuildOverrun, maxGdvDrop: resilience.maxGdvDrop,
     score
   };
@@ -608,7 +714,9 @@ async function runAppraisal() {
   buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin, resilience);
   buildSensTable(gdv, buildMid, purchase, sdlt, finance);
   buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult, floodZone, planwireResult, conservationArea);
+  buildDevTypePlanningCard(devTypePlanningIntel, devType);
   renderAvalorScore(score);
+  buildMissedItemsSection(currentAppraisal);
 
   const growthWidth = Math.min(90, Math.max(10, (Math.abs(growth) / 10) * 100));
   document.getElementById('growth-fill').style.width = growthWidth + '%';
@@ -873,6 +981,210 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
       </div>`;
   });
   document.getElementById('type-grid').innerHTML = typesHtml;
+}
+
+function buildDevTypePlanningCard(result, devType) {
+  const labelEl = document.getElementById('devtype-planning-label');
+  const caveatBox = document.getElementById('devtype-planning-caveat');
+  const metricsBox = document.getElementById('devtype-planning-metrics');
+  const refurbNote = document.getElementById('devtype-planning-refurb-note');
+  const limitedBox = document.getElementById('devtype-planning-limited');
+  if (!labelEl) return;
+
+  labelEl.textContent = devType;
+  caveatBox.style.display = 'none';
+  metricsBox.style.display = 'grid';
+  refurbNote.style.display = 'none';
+  limitedBox.style.display = 'none';
+
+  if (!result) {
+    metricsBox.style.display = 'none';
+    refurbNote.style.display = 'block';
+    refurbNote.textContent = 'Planning application data is not available for this postcode right now.';
+    return;
+  }
+
+  if (result.mode === 'refurb') {
+    metricsBox.style.display = 'none';
+    refurbNote.style.display = 'block';
+    const { decided, approved, refused, approvalRate } = result;
+    const intro = "Refurbishment works typically fall under permitted development and don't require planning permission.";
+    if (decided === 0) {
+      refurbNote.textContent = `${intro} No planning applications of any type were found nearby to use as a wider reference point.`;
+    } else if (decided < 3) {
+      refurbNote.textContent = `${intro} For reference, only ${decided} planning application${decided === 1 ? '' : 's'} of any type ${decided === 1 ? 'has' : 'have'} been decided nearby — too few to show a reliable approval rate (${approved} approved, ${refused} refused).`;
+    } else {
+      refurbNote.textContent = `${intro} For reference, ${decided} planning applications of all types were decided nearby with a ${Math.round(approvalRate * 100)}% approval rate.`;
+    }
+    return;
+  }
+
+  // mode === 'devtype'
+  document.getElementById('devtype-planning-radius').textContent = result.radiusKm + 'km';
+  document.getElementById('devtype-planning-count').textContent = result.totalMatched;
+  document.getElementById('devtype-planning-count-sub').textContent = `Within ${result.radiusKm}km`;
+
+  const rateEl = document.getElementById('devtype-planning-rate');
+  const rateSubEl = document.getElementById('devtype-planning-rate-sub');
+  if (result.decided >= 3) {
+    rateEl.textContent = Math.round(result.approvalRate * 100) + '%';
+    rateSubEl.textContent = `${result.approved} of ${result.decided} decided`;
+  } else {
+    rateEl.textContent = '—';
+    rateSubEl.textContent = result.decided > 0 ? `Only ${result.decided} decided — too few to rate` : 'No decisions yet';
+  }
+
+  if (result.radiusExpanded) {
+    caveatBox.style.display = 'flex';
+    document.getElementById('devtype-planning-caveat-msg').textContent =
+      `Showing outcomes within ${result.radiusKm}km — not enough ${devType} applications were found closer to the property.`;
+  }
+
+  if (result.totalMatched < 3) {
+    limitedBox.style.display = 'block';
+    document.getElementById('devtype-planning-limited-msg').textContent =
+      `Not enough ${devType} applications nearby to show a reliable approval pattern.`;
+    document.getElementById('devtype-planning-list').innerHTML = result.matches.map(a => {
+      const c = classifyPlanningDecision(a.decision);
+      const label = c === 'approved' ? 'Approved' : c === 'refused' ? 'Refused' : 'Pending / other';
+      const cls = c === 'approved' ? 'flag-safe' : c === 'refused' ? 'flag-risk' : 'flag-warn';
+      return `<li class="risk-item"><div class="risk-item-row"><span>${escapeHtml(a.address) || 'Address not available'}</span><span class="flag ${cls}">${label}</span></div></li>`;
+    }).join('');
+  }
+}
+
+// --- Things You May Have Missed ---
+// Evidence-based checks derived from cross-referencing appraisal fields against
+// the actual scoring/calc logic above — not generic disclaimers.
+
+const NO_TYPE_FILTER_DEVTYPES = ['Light refurbishment', 'Full refurbishment', 'New build'];
+const LONG_BUILD_DEVTYPES = ['New build', 'HMO conversion'];
+
+function computeMissedItems(a) {
+  const items = [];
+
+  // A strong blended score can hide one seriously weak category
+  if (a.score.overall >= 70) {
+    SCORE_CATEGORY_META.forEach(meta => {
+      const val = a.score.categories[meta.key];
+      if (val < 40) {
+        items.push({
+          severity: 'warn',
+          title: 'A strong score is masking a weak category',
+          text: `Your overall score reads as a Strong deal, but ${meta.label} scores just ${val}/100. A good blended score can hide one seriously weak category — check the breakdown above before treating this as a green light across the board.`
+        });
+      }
+    });
+  }
+
+  // EPC is from a sample property in the postcode, not the actual one — and it
+  // directly weights the Exit Strategy score when the band isn't A/B/C
+  if (a.epcResult && a.epcResult.band && !'ABC'.includes(a.epcResult.band.toUpperCase())) {
+    items.push({
+      severity: 'warn',
+      title: 'EPC used is a sample, not confirmed for this property',
+      text: `The EPC band used (${a.epcResult.band}) is from a sample property in this postcode, not the specific one you're appraising — and it currently feeds 30% of your Exit Strategy score (${a.score.categories.exitStrategy}/100). Confirm the real EPC before relying on that figure.`
+    });
+  }
+
+  // GDV comps aren't filtered to the end-product type for New build / refurb
+  if (!a.usedFallback && NO_TYPE_FILTER_DEVTYPES.includes(a.devType)) {
+    const areaLabel = a.district || a.postcode.split(' ')[0];
+    items.push({
+      severity: 'warn',
+      title: "GDV comps aren't filtered to your end product",
+      text: `GDV is based on the median sold price across all property types in ${areaLabel} — houses and flats together — not filtered to match a ${a.devType} scheme. If the local mix skews toward a different property type than your end product, GDV could be off in either direction.`
+    });
+  }
+
+  // The refurb discount baked into GDV works against New build
+  if (a.devType === 'New build') {
+    items.push({
+      severity: 'warn',
+      title: 'GDV discount may understate new-build value',
+      text: 'GDV applies a 15% discount to the local median price to reflect refurbished stock — but new build typically sells at a premium to existing stock, not a discount. This appraisal may be conservative on GDV here.'
+    });
+  }
+
+  // Conservation area flag is shown regardless of dev type, but the score
+  // deliberately doesn't penalise HMO conversion for it — Article 4 is the real risk
+  if (a.conservationArea === true && a.devType === 'HMO conversion') {
+    items.push({
+      severity: 'risk',
+      title: "Conservation area doesn't factor into your HMO planning score",
+      text: "This site is in a conservation area, but that isn't factored into your Planning Risk score for HMO conversions. What actually matters here is whether an Article 4 Direction removes permitted development rights for C3-to-C4 use — conservation areas often overlap with these. Worth checking with the local authority directly."
+    });
+  }
+
+  // New build in a flagged flood zone faces a national policy test, not just a local approval rate
+  if (a.devType === 'New build' && a.floodZone >= 2) {
+    items.push({
+      severity: 'risk',
+      title: `New build in a Flood Zone ${a.floodZone} area faces a planning policy test`,
+      text: `New build in a Flood Zone ${a.floodZone} area has to pass the sequential/exception test under national planning policy — a materially higher bar than the local approval rate reflects, and it can block consent outright regardless of precedent nearby.`
+    });
+  }
+
+  // Dev-type approval rate is confidently displayed just above the reliability cutoff
+  const dtpi = a.devTypePlanningIntel;
+  if (dtpi && dtpi.mode === 'devtype' && dtpi.decided >= 3 && dtpi.decided <= 5) {
+    const rate = Math.round(dtpi.approvalRate * 100);
+    const swing = Math.round((1 / dtpi.decided) * 100);
+    items.push({
+      severity: 'warn',
+      title: 'Approval rate is based on a thin sample',
+      text: `Your ${a.devType} approval rate (${rate}%) is based on just ${dtpi.decided} decided applications. One different outcome would swing that rate by ${swing}% — treat it as a signal, not a statistic.`
+    });
+  }
+
+  // Multiple units exiting into a market that's only just cleared the fallback threshold
+  if (!a.usedFallback && a.units >= 3 && a.compCount >= 5 && a.compCount <= 8) {
+    items.push({
+      severity: 'warn',
+      title: 'Multiple units, thin resale market',
+      text: `This exit relies on selling ${a.units} units into a market with only ${a.compCount} comparable sales in the last 12 months. Absorbing that many units at once could take longer, or need a price discount, versus what the assumed GDV reflects.`
+    });
+  }
+
+  // Finance is a flat rate that doesn't account for build programme length
+  if (LONG_BUILD_DEVTYPES.includes(a.devType)) {
+    items.push({
+      severity: 'warn',
+      title: 'Finance cost assumes a flat rate, regardless of build duration',
+      text: `Finance is calculated at a flat 6.5%, regardless of build duration. ${a.devType} schemes typically take significantly longer than a light refurbishment — if this build runs 12+ months, actual finance costs are likely higher than the ${fmt(a.finance)} shown.`
+    });
+  }
+
+  return items;
+}
+
+function renderMissedItems(items) {
+  const list = document.getElementById('missed-items-list');
+  const empty = document.getElementById('missed-items-empty');
+  if (!list || !empty) return;
+
+  if (!items.length) {
+    list.innerHTML = '';
+    list.style.display = 'none';
+    empty.style.display = 'flex';
+    return;
+  }
+
+  list.style.display = '';
+  empty.style.display = 'none';
+  list.innerHTML = items.map(item => {
+    const icon = item.severity === 'risk' ? 'ti-alert-octagon' : 'ti-alert-triangle';
+    const iconColor = item.severity === 'risk' ? 'var(--red)' : 'var(--amber)';
+    return `
+      <li class="risk-item">
+        <div class="risk-item-row"><span style="display:flex;align-items:center;gap:8px;font-weight:500"><i class="ti ${icon}" style="color:${iconColor};flex-shrink:0"></i>${escapeHtml(item.title)}</span></div>
+        <div class="risk-item-note ${item.severity}">${escapeHtml(item.text)}</div>
+      </li>`;
+  }).join('');
+}
+
+function buildMissedItemsSection(a) {
+  renderMissedItems(computeMissedItems(a));
 }
 
 function exportPdf() {

@@ -1169,6 +1169,16 @@
           <div class="score-cat-list" id="score-cat-list"></div>
         </div>
 
+        <!-- Things You May Have Missed -->
+        <div class="card" style="margin-bottom:1.5rem" id="missed-items-card">
+          <div class="card-title"><i class="ti ti-list-search"></i>Things you may have missed</div>
+          <ul class="risk-list" id="missed-items-list"></ul>
+          <div id="missed-items-empty" style="display:none;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary)">
+            <i class="ti ti-circle-check" style="color:var(--green);font-size:16px"></i>
+            Nothing flagged — no additional issues spotted from the data checked.
+          </div>
+        </div>
+
         <!-- Financial summary + Risk flags -->
         <div class="two-col">
           <div class="card">
@@ -1217,6 +1227,37 @@
               <span style="font-size:13px">5yr avg: <strong style="color:var(--green)" id="growth-pct">+6.2% p/a</strong></span>
             </div>
           </div>
+        </div>
+
+        <!-- Development-Type Planning Intelligence -->
+        <div class="card" style="margin-bottom:1.5rem" id="devtype-planning-card">
+          <div class="card-title">
+            <i class="ti ti-clipboard-text"></i>
+            Planning intelligence — <span id="devtype-planning-label">Flat conversion</span>
+          </div>
+
+          <div id="devtype-planning-caveat" style="display:none;background:var(--amber-light);border:1px solid var(--amber);border-radius:10px;padding:12px 16px;margin-bottom:1rem;align-items:flex-start;gap:10px">
+            <i class="ti ti-alert-triangle" style="color:var(--amber);font-size:18px;flex-shrink:0;margin-top:1px"></i>
+            <div>
+              <div style="font-weight:600;font-size:13px;color:var(--amber)">Limited data at this postcode</div>
+              <div style="font-size:12px;color:#7A5010;margin-top:2px" id="devtype-planning-caveat-msg"></div>
+            </div>
+          </div>
+
+          <div class="metrics-grid-3" id="devtype-planning-metrics" style="margin-bottom:1rem">
+            <div class="metric-tile"><div class="metric-tile-label">Relevant applications</div><div class="metric-tile-value" style="font-size:18px" id="devtype-planning-count">—</div><div class="metric-tile-sub" id="devtype-planning-count-sub">—</div></div>
+            <div class="metric-tile"><div class="metric-tile-label">Approval rate</div><div class="metric-tile-value" style="font-size:18px" id="devtype-planning-rate">—</div><div class="metric-tile-sub" id="devtype-planning-rate-sub">—</div></div>
+            <div class="metric-tile"><div class="metric-tile-label">Search radius used</div><div class="metric-tile-value" style="font-size:18px" id="devtype-planning-radius">—</div><div class="metric-tile-sub">From property location</div></div>
+          </div>
+
+          <div id="devtype-planning-refurb-note" style="display:none;font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:0.5rem"></div>
+
+          <div id="devtype-planning-limited" style="display:none">
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px" id="devtype-planning-limited-msg"></div>
+            <ul class="risk-list" id="devtype-planning-list"></ul>
+          </div>
+
+          <div class="source-note"><i class="ti ti-database" style="font-size:12px"></i>PlanWire — UK council planning applications</div>
         </div>
 
         <!-- SDLT Breakdown -->
