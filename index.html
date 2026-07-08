@@ -387,15 +387,6 @@
     /* TWO COLUMN LAYOUT */
     .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
 
-    /* SENSITIVITY TABLE */
-    .sens-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .sens-table th { font-size: 11px; font-weight: 500; color: var(--text-secondary); padding: 7px 9px; text-align: center; background: var(--bg-secondary); }
-    .sens-table th:first-child { text-align: left; }
-    .sens-table td { padding: 7px 9px; text-align: center; border: 1px solid var(--border); }
-    .cell-green { background: var(--green-light); color: var(--green-text); font-weight: 600; }
-    .cell-amber { background: var(--amber-light); color: #7A4E00; font-weight: 600; }
-    .cell-red { background: var(--red-light); color: var(--red); font-weight: 600; }
-
     /* DEAL RESILIENCE */
     .resilience-summary {
       display: flex;
@@ -443,6 +434,66 @@
     .headroom-fill { height: 100%; border-radius: 4px; background: var(--green); transition: width 0.5s ease; }
     .headroom-val { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
 
+    /* WHAT IF SCENARIOS */
+    .whatif-panel { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+    .whatif-panel-title { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+    .whatif-panel-sub { font-size: 12px; color: var(--text-secondary); margin-bottom: 1.1rem; }
+
+    .whatif-row { margin-bottom: 1.1rem; }
+    .whatif-row-label { font-size: 13px; color: var(--text); margin-bottom: 10px; }
+    .whatif-row-value { font-size: 12px; color: var(--text-secondary); margin-top: 7px; }
+
+    .whatif-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 5px;
+      border-radius: 3px;
+      background: var(--border);
+      outline: none;
+      accent-color: var(--green);
+    }
+
+    .whatif-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--green);
+      cursor: pointer;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    }
+
+    .whatif-slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--green);
+      cursor: pointer;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    }
+
+    .whatif-result {
+      background: var(--bg-secondary);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      margin-top: 1.25rem;
+    }
+
+    .whatif-result-main { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .whatif-result-margin { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .whatif-result-sub { font-size: 11px; color: var(--text-secondary); }
+
+    .whatif-result-verdict { font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; flex-shrink: 0; }
+    .whatif-result-verdict.viable { background: var(--green-light); color: var(--green-text); }
+    .whatif-result-verdict.marginal { background: var(--amber-light); color: #7A4E00; }
+    .whatif-result-verdict.not-viable { background: var(--red-light); color: var(--red); }
+
+    .whatif-result-detail { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
     /* AVALOR SCORE */
     .score-hero { display: flex; align-items: center; gap: 22px; margin-bottom: 1.5rem; }
 
@@ -487,10 +538,6 @@
     }
 
     .detail-toggle:hover { color: var(--text); }
-
-    .sens-legend { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
-    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); }
-    .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
 
     /* AREA SNAPSHOT */
     .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
@@ -778,7 +825,7 @@
 
       /* Hide everything except results */
       .topbar, .sidebar, .page-header, #onboarding-card, #trial-banner,
-      #property-details-card, #data-banner, .detail-toggle, #sens-wrap > .sens-legend,
+      #property-details-card, #data-banner, .detail-toggle, #whatif-panel,
       #page-saved, #page-compare, #page-account, .modal-overlay,
       .btn, [id$="-btn"] { display: none !important; }
 
@@ -789,9 +836,6 @@
       .page { display: block !important; padding: 0 !important; }
       #page-appraisal { display: block !important; }
       #results { display: block !important; }
-
-      /* Force sens table open */
-      #sens-wrap { display: block !important; }
 
       /* Base text colours — explicit hex so nothing depends on CSS variable
          resolution inside the print context. */
@@ -804,8 +848,6 @@
       .type-name { color: #6B7280 !important; }
       .type-price { color: #111827 !important; }
       .bar-val-out { color: #6B7280 !important; }
-      .sens-table th { color: #6B7280 !important; }
-      .sens-table td { color: #111827 !important; }
 
       /* Cards */
       .card {
@@ -819,40 +861,40 @@
       .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
       /* Neutral tinted backgrounds */
-      .metric-tile, .sens-table th, .bar-track, .growth-track, .score-cat-track {
+      .metric-tile, .bar-track, .growth-track, .score-cat-track {
         background: #F1F3F6 !important;
       }
 
       .score-band-desc { color: #6B7280 !important; }
       .score-ring-sub { color: #6B7280 !important; }
 
-      /* Verdict / flags / sensitivity cells — pastel backgrounds with dark,
-         readable text, explicit hex on both sides of the pairing. */
-      .verdict.viable, .metric-tile.highlight, .flag-safe, .cell-green,
+      /* Verdict / flags — pastel backgrounds with dark, readable text,
+         explicit hex on both sides of the pairing. */
+      .verdict.viable, .metric-tile.highlight, .flag-safe,
       .resilience-summary.good {
         background: #E1F5EE !important;
       }
       .verdict.viable, .metric-tile.highlight .metric-tile-value,
-      .flag-safe, .cell-green, .resilience-summary.good .resilience-headline,
+      .flag-safe, .resilience-summary.good .resilience-headline,
       .resilience-summary.good .resilience-detail, .resilience-summary.good i,
       .bar-val {
         color: #085041 !important;
       }
 
-      .verdict.marginal, .flag-warn, .cell-amber, .resilience-summary.ok {
+      .verdict.marginal, .flag-warn, .resilience-summary.ok {
         background: #FAEEDA !important;
       }
-      .verdict.marginal, .flag-warn, .cell-amber,
+      .verdict.marginal, .flag-warn,
       .resilience-summary.ok .resilience-headline,
       .resilience-summary.ok .resilience-detail, .resilience-summary.ok i,
       .risk-item-note.warn, .metric-tile-sub.warn {
         color: #7A4E00 !important;
       }
 
-      .verdict.not-viable, .flag-risk, .cell-red, .resilience-summary.bad {
+      .verdict.not-viable, .flag-risk, .resilience-summary.bad {
         background: #FCEBEB !important;
       }
-      .verdict.not-viable, .flag-risk, .cell-red,
+      .verdict.not-viable, .flag-risk,
       .resilience-summary.bad .resilience-headline,
       .resilience-summary.bad .resilience-detail, .resilience-summary.bad i,
       .risk-item-note.risk, .metric-tile-sub.risk {
@@ -1293,26 +1335,42 @@
               <div class="headroom-val" id="gdv-headroom-val">Down to -10% on sales — still viable</div>
             </div>
           </div>
-          <button class="detail-toggle" onclick="toggleSens()" id="sens-toggle">
-            <i class="ti ti-chevron-down" id="sens-icon"></i>Show full sensitivity table
-          </button>
-          <div id="sens-wrap" style="display:none">
-            <div style="overflow-x:auto">
-              <table class="sens-table">
-                <thead>
-                  <tr>
-                    <th style="text-align:left">Build \ GDV</th>
-                    <th>-20%</th><th>-10%</th><th>Base</th><th>+10%</th><th>+20%</th>
-                  </tr>
-                </thead>
-                <tbody id="sens-body"></tbody>
-              </table>
+          <div class="whatif-panel" id="whatif-panel">
+            <div class="whatif-panel-title">What if...?</div>
+            <div class="whatif-panel-sub">Drag the sliders to stress-test this deal instantly.</div>
+
+            <div class="whatif-row">
+              <div class="whatif-row-label">What if you paid less for the property?</div>
+              <input type="range" class="whatif-slider" id="whatif-purchase" min="0" max="20" step="1" value="0" oninput="renderWhatIf()"/>
+              <div class="whatif-row-value" id="whatif-purchase-val">No change — base purchase price</div>
             </div>
-            <div class="sens-legend">
-              <div class="legend-item"><div class="legend-dot" style="background:var(--green-light);border:1px solid #9FE1CB"></div>Viable — above 20%</div>
-              <div class="legend-item"><div class="legend-dot" style="background:var(--amber-light);border:1px solid #FAC775"></div>Marginal — 12–20%</div>
-              <div class="legend-item"><div class="legend-dot" style="background:var(--red-light);border:1px solid #F7C1C1"></div>Not viable — below 12%</div>
+
+            <div class="whatif-row">
+              <div class="whatif-row-label">What if build costs ran over budget?</div>
+              <input type="range" class="whatif-slider" id="whatif-build" min="-10" max="30" step="1" value="0" oninput="renderWhatIf()"/>
+              <div class="whatif-row-value" id="whatif-build-val">No change — base build cost</div>
             </div>
+
+            <div class="whatif-row">
+              <div class="whatif-row-label">What if you sold for less?</div>
+              <input type="range" class="whatif-slider" id="whatif-gdv" min="0" max="20" step="1" value="0" oninput="renderWhatIf()"/>
+              <div class="whatif-row-value" id="whatif-gdv-val">No change — base GDV</div>
+            </div>
+
+            <div class="whatif-result">
+              <div class="whatif-result-main">
+                <div>
+                  <div class="whatif-result-margin" id="whatif-result-margin">—</div>
+                  <div class="whatif-result-sub">Profit on GDV</div>
+                </div>
+                <div class="whatif-result-verdict viable" id="whatif-result-verdict">Viable</div>
+              </div>
+              <div class="whatif-result-detail" id="whatif-result-detail">Move a slider to see how this deal responds.</div>
+            </div>
+
+            <button class="detail-toggle" onclick="resetWhatIf()" id="whatif-reset" style="margin-top:10px">
+              <i class="ti ti-refresh"></i>Reset to base case
+            </button>
           </div>
         </div>
 

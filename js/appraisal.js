@@ -712,7 +712,7 @@ async function runAppraisal() {
   }
 
   buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin, resilience);
-  buildSensTable(gdv, buildMid, purchase, sdlt, finance);
+  buildWhatIfSection(gdv, buildMid, purchase);
   buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult, floodZone, planwireResult, conservationArea);
   buildDevTypePlanningCard(devTypePlanningIntel, devType);
   renderAvalorScore(score);
@@ -795,22 +795,93 @@ function buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, baseMarg
     : 'Fails even at base GDV';
 }
 
-function buildSensTable(gdv, buildMid, purchase, sdlt, finance) {
-  const gdvVars = [-0.20, -0.10, 0, 0.10, 0.20];
-  const buildVars = [-0.20, -0.10, 0, 0.10, 0.20];
-  const labels = ['-20%', '-10%', 'Base', '+10%', '+20%'];
+// --- What if...? interactive scenarios ---
+// Replaces the old static sensitivity matrix with live sliders. Unlike getMargin()
+// above (used by the resilience headroom bars), this recomputes SDLT and finance
+// for the hypothetical purchase/build figures rather than holding them fixed —
+// both are genuinely purchase/build-dependent, so freezing them would understate
+// the effect of the purchase-price slider.
 
-  let html = '';
-  buildVars.forEach((bv, bi) => {
-    html += `<tr><td style="font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);padding:7px 9px;text-align:left">${labels[bi]} build</td>`;
-    gdvVars.forEach(gv => {
-      const m = getMargin(gdv, buildMid, purchase, sdlt, finance, gv, bv);
-      const cls = m >= 20 ? 'cell-green' : m >= 12 ? 'cell-amber' : 'cell-red';
-      html += `<td class="${cls}">${fmtPct(m)}</td>`;
-    });
-    html += '</tr>';
-  });
-  document.getElementById('sens-body').innerHTML = html;
+let whatIfBase = null;
+
+function computeWhatIf(purchasePctLess, buildPctOver, gdvPctLess) {
+  const { gdv, buildMid, purchase } = whatIfBase;
+  const newPurchase = purchase * (1 - purchasePctLess / 100);
+  const newBuild = buildMid * (1 + buildPctOver / 100);
+  const newGdv = gdv * (1 - gdvPctLess / 100);
+  const newSdlt = calcSDLT(newPurchase);
+  const newFinance = (newPurchase + newBuild) * 0.065;
+  const agentFees = newGdv * 0.015;
+  const profFees = newBuild * 0.12;
+  const contingency = newBuild * 0.10;
+  const totalCosts = newPurchase + newBuild + newSdlt + agentFees + profFees + contingency + newFinance;
+  const profit = newGdv - totalCosts;
+  const margin = newGdv > 0 ? (profit / newGdv) * 100 : 0;
+  return { newPurchase, newBuild, newGdv, profit, margin };
+}
+
+function buildWhatIfSection(gdv, buildMid, purchase) {
+  whatIfBase = { gdv, buildMid, purchase };
+  document.getElementById('whatif-purchase').value = 0;
+  document.getElementById('whatif-build').value = 0;
+  document.getElementById('whatif-gdv').value = 0;
+  renderWhatIf();
+}
+
+function resetWhatIf() {
+  document.getElementById('whatif-purchase').value = 0;
+  document.getElementById('whatif-build').value = 0;
+  document.getElementById('whatif-gdv').value = 0;
+  renderWhatIf();
+}
+
+function renderWhatIf() {
+  if (!whatIfBase) return;
+
+  const purchasePctLess = parseFloat(document.getElementById('whatif-purchase').value);
+  const buildPctOver = parseFloat(document.getElementById('whatif-build').value);
+  const gdvPctLess = parseFloat(document.getElementById('whatif-gdv').value);
+
+  const base = computeWhatIf(0, 0, 0);
+  const scenario = computeWhatIf(purchasePctLess, buildPctOver, gdvPctLess);
+
+  document.getElementById('whatif-purchase-val').textContent = purchasePctLess === 0
+    ? `No change — ${fmt(whatIfBase.purchase)} purchase price`
+    : `${fmt(whatIfBase.purchase - scenario.newPurchase)} less (${purchasePctLess}%) — ${fmt(scenario.newPurchase)} purchase price`;
+
+  document.getElementById('whatif-build-val').textContent = buildPctOver === 0
+    ? `No change — ${fmt(whatIfBase.buildMid)} build cost`
+    : buildPctOver > 0
+      ? `+${buildPctOver}% over budget — ${fmt(scenario.newBuild)} build cost`
+      : `${buildPctOver}% under budget — ${fmt(scenario.newBuild)} build cost`;
+
+  document.getElementById('whatif-gdv-val').textContent = gdvPctLess === 0
+    ? `No change — ${fmt(whatIfBase.gdv)} GDV`
+    : `${fmt(whatIfBase.gdv - scenario.newGdv)} less (${gdvPctLess}%) — ${fmt(scenario.newGdv)} GDV`;
+
+  const marginEl = document.getElementById('whatif-result-margin');
+  const verdictEl = document.getElementById('whatif-result-verdict');
+  const detailEl = document.getElementById('whatif-result-detail');
+
+  marginEl.textContent = fmtPct(scenario.margin);
+
+  let verdictCls, verdictText, color;
+  if (scenario.margin >= 20) { verdictCls = 'viable'; verdictText = 'Viable'; color = 'var(--green)'; }
+  else if (scenario.margin >= 12) { verdictCls = 'marginal'; verdictText = 'Marginal'; color = 'var(--amber)'; }
+  else { verdictCls = 'not-viable'; verdictText = 'Not viable'; color = 'var(--red)'; }
+
+  marginEl.style.color = color;
+  verdictEl.className = 'whatif-result-verdict ' + verdictCls;
+  verdictEl.textContent = verdictText;
+
+  const profitDelta = scenario.profit - base.profit;
+  if (purchasePctLess === 0 && buildPctOver === 0 && gdvPctLess === 0) {
+    detailEl.textContent = `Profit: ${fmt(scenario.profit)} — same as your base case.`;
+  } else if (profitDelta < 0) {
+    detailEl.textContent = `Profit: ${fmt(scenario.profit)} — ${fmt(Math.abs(profitDelta))} lower than your base case.`;
+  } else {
+    detailEl.textContent = `Profit: ${fmt(scenario.profit)} — ${fmt(profitDelta)} higher than your base case.`;
+  }
 }
 
 function setRiskNote(id, cls, text) {
@@ -1206,25 +1277,9 @@ function exportPdf() {
   const prevTitle = document.title;
   document.title = `Avalor Appraisal — ${currentAppraisal.postcode} — ${currentAppraisal.devType}`;
 
-  // Force the sensitivity table open so it prints
-  const sensWrap = document.getElementById('sens-wrap');
-  const sensWasHidden = sensWrap.style.display === 'none';
-  if (sensWasHidden) sensWrap.style.display = 'block';
-
   window.print();
 
   // Restore state after print dialog closes
   document.title = prevTitle;
   document.body.classList.remove('pdf-watermark');
-  if (sensWasHidden) sensWrap.style.display = 'none';
-}
-
-function toggleSens() {
-  const wrap = document.getElementById('sens-wrap');
-  const icon = document.getElementById('sens-icon');
-  const btn = document.getElementById('sens-toggle');
-  const open = wrap.style.display === 'none';
-  wrap.style.display = open ? 'block' : 'none';
-  icon.className = open ? 'ti ti-chevron-up' : 'ti ti-chevron-down';
-  btn.childNodes[1].textContent = open ? ' Hide full sensitivity table' : ' Show full sensitivity table';
 }
