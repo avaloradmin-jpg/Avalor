@@ -9,6 +9,27 @@ const BCIS = {
   'New build':            { low: 1800, mid: 2400, high: 3200 }
 };
 
+// GDV multiplier — how the end-product type is expected to sell relative to
+// the raw district median. Conversions produce lower-value stock, a good
+// refurb should meet the median, new build commands a premium.
+const GDV_MULTIPLIER = {
+  'Loft conversion':     0.85,
+  'Flat conversion':     0.85,
+  'HMO conversion':      0.85,
+  'Light refurbishment': 1.00,
+  'Full refurbishment':  1.00,
+  'New build':           1.05
+};
+
+const GDV_MULTIPLIER_REASON = {
+  'Loft conversion':     'Refurbished or converted stock typically sells at a small discount to the local median',
+  'Flat conversion':     'Refurbished or converted stock typically sells at a small discount to the local median',
+  'HMO conversion':      'Refurbished or converted stock typically sells at a small discount to the local median',
+  'Light refurbishment': 'A well-executed refurb should achieve close to the local median sold price',
+  'Full refurbishment':  'A well-executed refurb should achieve close to the local median sold price',
+  'New build':           'New build typically commands a premium over existing stock'
+};
+
 // Regional fallback prices (£/sqm) — used when Land Registry returns < 5 comps
 const PRICE_PER_SQM_FALLBACK = {
   'London':     6500,
@@ -362,6 +383,33 @@ function getFinanceNote(finance, gdv) {
   return { cls: '', text: 'Modest relative to GDV at this build period — a slipping timeline is a bigger risk to this figure than the interest rate is.' };
 }
 
+function renderGdvExplainer(a) {
+  const el = document.getElementById('gdv-calc-body');
+  if (!el) return;
+
+  const areaLabel = a.district || a.postcode.split(' ')[0];
+  const multiplierLine = `×${a.gdvMultiplier.toFixed(2)} — ${GDV_MULTIPLIER_REASON[a.devType]}`;
+
+  let sourceLine, compsLine;
+  if (a.usedFallback) {
+    sourceLine = 'Regional estimate — not enough live Land Registry sales to use';
+    compsLine = `0 usable comps in ${areaLabel} in the last 12 months`;
+  } else if (a.usedPropTypeFallback) {
+    sourceLine = 'Land Registry Price Paid comps, district-wide (not filtered by property type)';
+    compsLine = `${a.compCount} sold comps across all property types — only ${a.propTypeFilteredCount} were ${a.propType.toLowerCase()}, too few to filter on their own`;
+  } else {
+    sourceLine = 'Land Registry Price Paid comps';
+    compsLine = `${a.compCount} sold comp${a.compCount === 1 ? '' : 's'} in the last 12 months`;
+  }
+
+  el.innerHTML = `
+    <div><strong>Data source:</strong> ${escapeHtml(sourceLine)}</div>
+    <div><strong>Comparables used:</strong> ${escapeHtml(compsLine)}</div>
+    <div><strong>District:</strong> ${escapeHtml(areaLabel)}</div>
+    <div><strong>Multiplier:</strong> ${escapeHtml(multiplierLine)}</div>
+  `;
+}
+
 function getMargin(gdv, buildMid, purchase, sdlt, finance, gdvVar, buildVar) {
   const g = gdv * (1 + gdvVar);
   const b = buildMid * (1 + buildVar);
@@ -658,8 +706,9 @@ async function runAppraisal() {
 
   const ppm = Math.round(medianPrice / 90);
 
-  // GDV: median comp × units × 0.85 (refurb discount vs new/prime)
-  const gdv = medianPrice * units * 0.85;
+  // GDV: median comp × units × dev-type multiplier (see GDV_MULTIPLIER above)
+  const gdvMultiplier = GDV_MULTIPLIER[devType] ?? 0.85;
+  const gdv = medianPrice * units * gdvMultiplier;
 
   const buildMid = area * bcis.mid;
   const sdlt = calcSDLT(purchase);
@@ -682,7 +731,7 @@ async function runAppraisal() {
 
   currentAppraisal = {
     postcode, devType, propType, region, purchase, area, units,
-    gdv, buildMid, sdlt, finance, profit, margin, rlv,
+    gdv, gdvMultiplier, medianPrice, buildMid, sdlt, finance, profit, margin, rlv,
     bcis, growth, ppm, compCount: last12.length, district, usedFallback,
     usedPropTypeFallback, propTypeFilteredCount,
     epcResult, floodZone, planwireResult, conservationArea, devTypePlanningIntel,
@@ -705,6 +754,16 @@ async function runAppraisal() {
   document.getElementById('r-margin').textContent = fmtPct(margin);
   document.getElementById('r-rlv').textContent = fmt(rlv);
   document.getElementById('r-bcis').textContent = `£${bcis.low.toLocaleString()} – £${bcis.high.toLocaleString()}/m²`;
+
+  document.getElementById('r-build-note').textContent = `£${bcis.mid.toLocaleString('en-GB')}/m² × ${area}m² = ${fmt(buildMid)}`;
+
+  const gdvBasisLabel = usedFallback ? 'regional avg' : 'median';
+  document.getElementById('r-gdv-note').textContent = `${fmt(medianPrice)} ${gdvBasisLabel} × ${units} unit${units === 1 ? '' : 's'} × ${gdvMultiplier.toFixed(2)} = ${fmt(gdv)}`;
+
+  renderGdvExplainer({
+    usedFallback, usedPropTypeFallback, district, postcode, region, devType, propType,
+    compCount: last12.length, propTypeFilteredCount, gdvMultiplier
+  });
 
   document.getElementById('r-sdlt-note').textContent = getSdltNote(sdlt, purchase);
 
@@ -1208,15 +1267,6 @@ function computeMissedItems(a) {
       severity: 'warn',
       title: `Not enough ${propLabel} sales to filter GDV by property type`,
       text: `Only ${a.propTypeFilteredCount} sold ${propLabel} comparable${a.propTypeFilteredCount === 1 ? '' : 's'} were found in ${areaLabel} in the last 12 months — too few to trust on their own. GDV instead uses the median sold price across all property types in ${areaLabel}, which may run higher or lower than ${propLabel} values specifically.`
-    });
-  }
-
-  // The refurb discount baked into GDV works against New build
-  if (a.devType === 'New build') {
-    items.push({
-      severity: 'warn',
-      title: 'GDV discount may understate new-build value',
-      text: 'GDV applies a 15% discount to the local median price to reflect refurbished stock — but new build typically sells at a premium to existing stock, not a discount. This appraisal may be conservative on GDV here.'
     });
   }
 

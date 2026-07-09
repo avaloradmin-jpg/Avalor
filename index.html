@@ -333,6 +333,14 @@
     .metric-tile-value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .metric-tile-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
+    .calc-detail { margin-top: 6px; font-size: 11px; }
+    .calc-detail summary { cursor: pointer; color: var(--text-secondary); font-weight: 500; list-style: none; display: flex; align-items: center; gap: 4px; }
+    .calc-detail summary::-webkit-details-marker { display: none; }
+    .calc-detail summary::before { content: '▸'; font-size: 9px; color: var(--text-tertiary); transition: transform 0.15s; }
+    .calc-detail[open] summary::before { transform: rotate(90deg); }
+    .calc-detail-body { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); color: var(--text-tertiary); line-height: 1.6; }
+    .calc-detail-body strong { color: var(--text-secondary); font-weight: 600; }
+
     .metric-tile.highlight { background: var(--green-light); }
     .metric-tile.highlight .metric-tile-value { color: var(--green-text); }
 
@@ -1226,8 +1234,16 @@
           <div class="card">
             <div class="card-title"><i class="ti ti-chart-bar"></i>Financial summary</div>
             <div class="metrics-grid">
-              <div class="metric-tile"><div class="metric-tile-label">Gross development value</div><div class="metric-tile-value" id="r-gdv">—</div></div>
-              <div class="metric-tile"><div class="metric-tile-label">Total build cost</div><div class="metric-tile-value" id="r-build">—</div></div>
+              <div class="metric-tile">
+                <div class="metric-tile-label">Gross development value</div>
+                <div class="metric-tile-value" id="r-gdv">—</div>
+                <div class="metric-tile-sub" id="r-gdv-note"></div>
+                <details class="calc-detail">
+                  <summary>How is this calculated?</summary>
+                  <div class="calc-detail-body" id="gdv-calc-body"></div>
+                </details>
+              </div>
+              <div class="metric-tile"><div class="metric-tile-label">Total build cost</div><div class="metric-tile-value" id="r-build">—</div><div class="metric-tile-sub" id="r-build-note"></div></div>
               <div class="metric-tile"><div class="metric-tile-label">SDLT</div><div class="metric-tile-value" id="r-sdlt">—</div><div class="metric-tile-sub" id="r-sdlt-note"></div></div>
               <div class="metric-tile"><div class="metric-tile-label">Dev finance est.</div><div class="metric-tile-value" id="r-finance">—</div><div class="metric-tile-sub" id="r-finance-note"></div></div>
               <div class="metric-tile"><div class="metric-tile-label">Profit</div><div class="metric-tile-value" id="r-profit">—</div></div>
