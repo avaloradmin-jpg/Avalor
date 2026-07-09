@@ -30,7 +30,9 @@ const PRICE_GROWTH_FALLBACK = {
   'Yorkshire':  6.5
 };
 
-// End-product property type for each dev type — used to filter comps
+// End-product property type for each dev type — used to filter comps.
+// Conversions always produce flats regardless of what "Property type" the
+// user selected, so this takes priority over PROP_TYPE_TO_PPD_TYPE below.
 const DEV_TYPE_TO_PPD_TYPE = {
   'Flat conversion':     'flat-maisonette',
   'Loft conversion':     'flat-maisonette',
@@ -38,6 +40,16 @@ const DEV_TYPE_TO_PPD_TYPE = {
   'Light refurbishment': null,
   'Full refurbishment':  null,
   'New build':           null
+};
+
+// User-selected "Property type" — used to filter comps when the dev type
+// doesn't already force an end-product type (refurb/new build, where the
+// output type is whatever the user says it is). PPD prefLabel values.
+const PROP_TYPE_TO_PPD_TYPE = {
+  'Detached house':      'detached',
+  'Semi-detached house': 'semi-detached',
+  'Terraced house':      'terraced',
+  'Flat':                'flat-maisonette'
 };
 
 // --- Development-type planning intelligence keyword map ---
@@ -234,7 +246,7 @@ async function fetchDevTypePlanningIntel(lat, lng, devType) {
   };
 }
 
-async function fetchLandRegistryComps(postcode, devType) {
+async function fetchLandRegistryComps(postcode, devType, propType) {
   // Step 1: resolve postcode to district
   const pcClean = postcode.replace(/\s+/g, '');
   const pcResp = await fetch(POSTCODES_API + pcClean, { signal: AbortSignal.timeout(5000) });
@@ -262,13 +274,23 @@ async function fetchLandRegistryComps(postcode, devType) {
     type: item.propertyType?.prefLabel?.[0]?._value ?? ''
   })).filter(t => t.price > 0 && !isNaN(t.date));
 
-  // Filter by end-product property type
-  const typeFilter = DEV_TYPE_TO_PPD_TYPE[devType];
+  // Filter by end-product property type: the dev type's forced type (conversions)
+  // takes priority over the user-selected property type (refurb/new build).
+  const devForcedType = DEV_TYPE_TO_PPD_TYPE[devType];
+  const propTypeFilter = PROP_TYPE_TO_PPD_TYPE[propType] || null;
+  const typeFilter = devForcedType || propTypeFilter;
   const filtered = typeFilter
     ? transactions.filter(t => t.type === typeFilter)
     : transactions;
 
-  return { transactions: filtered, district, lat: pcData.result.latitude, lng: pcData.result.longitude };
+  return {
+    transactions: filtered,
+    allTransactions: transactions,
+    district,
+    lat: pcData.result.latitude,
+    lng: pcData.result.longitude,
+    filterSource: devForcedType ? 'devType' : (propTypeFilter ? 'propType' : null)
+  };
 }
 
 function median(arr) {
@@ -525,6 +547,7 @@ let currentAppraisal = null;
 async function runAppraisal() {
   const postcode = document.getElementById('postcode').value.trim().toUpperCase();
   const devType = document.getElementById('dev-type').value;
+  const propType = document.getElementById('prop-type').value;
   const region = document.getElementById('region').value;
   const purchase = parseFloat(document.getElementById('purchase').value) || 320000;
   const area = parseFloat(document.getElementById('floorarea').value) || 110;
@@ -544,9 +567,13 @@ async function runAppraisal() {
   const fallbackGrowth = PRICE_GROWTH_FALLBACK[region] || 6.0;
 
   let comps = [];
+  let allComps = [];
+  let filterSource = null;
   let district = '';
   let usedFallback = false;
   let fallbackReason = '';
+  let usedPropTypeFallback = false;
+  let propTypeFilteredCount = 0;
   let epcResult = null;
   let floodZone = null;
   let planwireResult = null;
@@ -555,12 +582,14 @@ async function runAppraisal() {
 
   // Land Registry and Homedata address lookup run in parallel
   const [lrOutcome, addrOutcome] = await Promise.allSettled([
-    fetchLandRegistryComps(postcode, devType),
+    fetchLandRegistryComps(postcode, devType, propType),
     resolveHomedataAddresses(postcode)
   ]);
 
   if (lrOutcome.status === 'fulfilled') {
     comps = lrOutcome.value.transactions;
+    allComps = lrOutcome.value.allTransactions;
+    filterSource = lrOutcome.value.filterSource;
     district = lrOutcome.value.district;
   } else {
     usedFallback = true;
@@ -588,8 +617,21 @@ async function runAppraisal() {
   // Split into last 12 months and prior 12 months for YoY growth
   const now = new Date();
   const twelveMonthsAgo = new Date(now); twelveMonthsAgo.setFullYear(now.getFullYear() - 1);
-  const last12 = comps.filter(t => t.date >= twelveMonthsAgo);
-  const prior12 = comps.filter(t => t.date < twelveMonthsAgo);
+  let last12 = comps.filter(t => t.date >= twelveMonthsAgo);
+  let prior12 = comps.filter(t => t.date < twelveMonthsAgo);
+
+  // If filtering to the selected property type left too few comps, fall back to the
+  // unfiltered district data (still real, still local) rather than jumping straight
+  // to the regional £/sqm fallback.
+  if (!usedFallback && filterSource === 'propType' && last12.length < 5) {
+    propTypeFilteredCount = last12.length;
+    const allLast12 = allComps.filter(t => t.date >= twelveMonthsAgo);
+    if (allLast12.length >= 5) {
+      usedPropTypeFallback = true;
+      last12 = allLast12;
+      prior12 = allComps.filter(t => t.date < twelveMonthsAgo);
+    }
+  }
 
   // Require at least 5 comps in the last 12 months to trust the data
   if (!usedFallback && last12.length < 5) {
@@ -639,9 +681,10 @@ async function runAppraisal() {
   });
 
   currentAppraisal = {
-    postcode, devType, region, purchase, area, units,
+    postcode, devType, propType, region, purchase, area, units,
     gdv, buildMid, sdlt, finance, profit, margin, rlv,
     bcis, growth, ppm, compCount: last12.length, district, usedFallback,
+    usedPropTypeFallback, propTypeFilteredCount,
     epcResult, floodZone, planwireResult, conservationArea, devTypePlanningIntel,
     maxBuildOverrun: resilience.maxBuildOverrun, maxGdvDrop: resilience.maxGdvDrop,
     score
@@ -1128,7 +1171,6 @@ function buildDevTypePlanningCard(result, devType) {
 // Evidence-based checks derived from cross-referencing appraisal fields against
 // the actual scoring/calc logic above — not generic disclaimers.
 
-const NO_TYPE_FILTER_DEVTYPES = ['Light refurbishment', 'Full refurbishment', 'New build'];
 const LONG_BUILD_DEVTYPES = ['New build', 'HMO conversion'];
 
 function computeMissedItems(a) {
@@ -1158,13 +1200,14 @@ function computeMissedItems(a) {
     });
   }
 
-  // GDV comps aren't filtered to the end-product type for New build / refurb
-  if (!a.usedFallback && NO_TYPE_FILTER_DEVTYPES.includes(a.devType)) {
+  // Property type filter fell back to the unfiltered district median
+  if (a.usedPropTypeFallback) {
     const areaLabel = a.district || a.postcode.split(' ')[0];
+    const propLabel = a.propType.toLowerCase();
     items.push({
       severity: 'warn',
-      title: "GDV comps aren't filtered to your end product",
-      text: `GDV is based on the median sold price across all property types in ${areaLabel} — houses and flats together — not filtered to match a ${a.devType} scheme. If the local mix skews toward a different property type than your end product, GDV could be off in either direction.`
+      title: `Not enough ${propLabel} sales to filter GDV by property type`,
+      text: `Only ${a.propTypeFilteredCount} sold ${propLabel} comparable${a.propTypeFilteredCount === 1 ? '' : 's'} were found in ${areaLabel} in the last 12 months — too few to trust on their own. GDV instead uses the median sold price across all property types in ${areaLabel}, which may run higher or lower than ${propLabel} values specifically.`
     });
   }
 
