@@ -5,7 +5,7 @@ const BCIS = {
   'Loft conversion':          { low: 1500, mid: 1900, high: 2500 },
   'Flat conversion':          { low: 1500, mid: 2000, high: 2800 },
   'HMO conversion':           { low: 1500, mid: 1900, high: 2500 },
-  'Cosmetic refurbishment':   { low: 400,  mid: 600,  high: 900  },
+  'Cosmetic refurbishment':   { low: 200,  mid: 400,  high: 700  },
   'Light refurbishment':      { low: 800,  mid: 1100, high: 1500 },
   'Full refurbishment':       { low: 1500, mid: 1800, high: 2500 },
   'New build':                { low: 1800, mid: 2400, high: 3200 }
