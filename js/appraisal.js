@@ -1,11 +1,12 @@
 // Avalor — Appraisal calculation engine
 
+// BCIS Q1 2026 benchmark rates, £/m², ex-VAT — excludes professional fees and contingency
 const BCIS = {
-  'Loft conversion':      { low: 1200, mid: 1600, high: 2100 },
-  'Flat conversion':      { low: 1400, mid: 1800, high: 2400 },
-  'HMO conversion':       { low: 1300, mid: 1700, high: 2200 },
-  'Light refurbishment':  { low: 600,  mid: 900,  high: 1300 },
-  'Full refurbishment':   { low: 900,  mid: 1300, high: 1800 },
+  'Loft conversion':      { low: 1500, mid: 1900, high: 2500 },
+  'Flat conversion':      { low: 1500, mid: 2000, high: 2800 },
+  'HMO conversion':       { low: 1500, mid: 1900, high: 2500 },
+  'Light refurbishment':  { low: 1200, mid: 1500, high: 2000 },
+  'Full refurbishment':   { low: 1500, mid: 1800, high: 2500 },
   'New build':            { low: 1800, mid: 2400, high: 3200 }
 };
 
@@ -410,6 +411,18 @@ function renderGdvExplainer(a) {
   `;
 }
 
+function renderBuildCostExplainer(a) {
+  const el = document.getElementById('build-calc-body');
+  if (!el) return;
+
+  el.innerHTML = `
+    <div><strong>Data source:</strong> BCIS Q1 2026 benchmark rates, £/m², ex-VAT</div>
+    <div><strong>Rate used:</strong> £${a.bcis.mid.toLocaleString('en-GB')}/m² (mid) × ${a.area}m² = ${fmt(a.buildMid)}</div>
+    <div><strong>Range:</strong> £${a.bcis.low.toLocaleString('en-GB')} – £${a.bcis.high.toLocaleString('en-GB')}/m² for ${escapeHtml(a.devType)}</div>
+    <div>Excludes professional fees and contingency — these are costed separately.</div>
+  `;
+}
+
 function getMargin(gdv, buildMid, purchase, sdlt, finance, gdvVar, buildVar) {
   const g = gdv * (1 + gdvVar);
   const b = buildMid * (1 + buildVar);
@@ -764,6 +777,8 @@ async function runAppraisal() {
     usedFallback, usedPropTypeFallback, district, postcode, region, devType, propType,
     compCount: last12.length, propTypeFilteredCount, gdvMultiplier
   });
+
+  renderBuildCostExplainer({ bcis, area, buildMid, devType });
 
   document.getElementById('r-sdlt-note').textContent = getSdltNote(sdlt, purchase);
 
