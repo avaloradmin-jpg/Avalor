@@ -2,33 +2,36 @@
 
 // BCIS Q1 2026 benchmark rates, £/m², ex-VAT — excludes professional fees and contingency
 const BCIS = {
-  'Loft conversion':      { low: 1500, mid: 1900, high: 2500 },
-  'Flat conversion':      { low: 1500, mid: 2000, high: 2800 },
-  'HMO conversion':       { low: 1500, mid: 1900, high: 2500 },
-  'Light refurbishment':  { low: 1200, mid: 1500, high: 2000 },
-  'Full refurbishment':   { low: 1500, mid: 1800, high: 2500 },
-  'New build':            { low: 1800, mid: 2400, high: 3200 }
+  'Loft conversion':          { low: 1500, mid: 1900, high: 2500 },
+  'Flat conversion':          { low: 1500, mid: 2000, high: 2800 },
+  'HMO conversion':           { low: 1500, mid: 1900, high: 2500 },
+  'Cosmetic refurbishment':   { low: 400,  mid: 600,  high: 900  },
+  'Light refurbishment':      { low: 800,  mid: 1100, high: 1500 },
+  'Full refurbishment':       { low: 1500, mid: 1800, high: 2500 },
+  'New build':                { low: 1800, mid: 2400, high: 3200 }
 };
 
 // GDV multiplier — how the end-product type is expected to sell relative to
 // the raw district median. Conversions produce lower-value stock, a good
 // refurb should meet the median, new build commands a premium.
 const GDV_MULTIPLIER = {
-  'Loft conversion':     0.85,
-  'Flat conversion':     0.85,
-  'HMO conversion':      0.85,
-  'Light refurbishment': 1.00,
-  'Full refurbishment':  1.00,
-  'New build':           1.05
+  'Loft conversion':        0.85,
+  'Flat conversion':        0.85,
+  'HMO conversion':         0.85,
+  'Cosmetic refurbishment': 1.00,
+  'Light refurbishment':    1.00,
+  'Full refurbishment':     1.00,
+  'New build':              1.05
 };
 
 const GDV_MULTIPLIER_REASON = {
-  'Loft conversion':     'Refurbished or converted stock typically sells at a small discount to the local median',
-  'Flat conversion':     'Refurbished or converted stock typically sells at a small discount to the local median',
-  'HMO conversion':      'Refurbished or converted stock typically sells at a small discount to the local median',
-  'Light refurbishment': 'A well-executed refurb should achieve close to the local median sold price',
-  'Full refurbishment':  'A well-executed refurb should achieve close to the local median sold price',
-  'New build':           'New build typically commands a premium over existing stock'
+  'Loft conversion':        'Refurbished or converted stock typically sells at a small discount to the local median',
+  'Flat conversion':        'Refurbished or converted stock typically sells at a small discount to the local median',
+  'HMO conversion':         'Refurbished or converted stock typically sells at a small discount to the local median',
+  'Cosmetic refurbishment': 'A well-executed refurb should achieve close to the local median sold price',
+  'Light refurbishment':    'A well-executed refurb should achieve close to the local median sold price',
+  'Full refurbishment':     'A well-executed refurb should achieve close to the local median sold price',
+  'New build':              'New build typically commands a premium over existing stock'
 };
 
 // Regional fallback prices (£/sqm) — used when Land Registry returns < 5 comps
@@ -56,12 +59,13 @@ const PRICE_GROWTH_FALLBACK = {
 // Conversions always produce flats regardless of what "Property type" the
 // user selected, so this takes priority over PROP_TYPE_TO_PPD_TYPE below.
 const DEV_TYPE_TO_PPD_TYPE = {
-  'Flat conversion':     'flat-maisonette',
-  'Loft conversion':     'flat-maisonette',
-  'HMO conversion':      'flat-maisonette',
-  'Light refurbishment': null,
-  'Full refurbishment':  null,
-  'New build':           null
+  'Flat conversion':        'flat-maisonette',
+  'Loft conversion':        'flat-maisonette',
+  'HMO conversion':         'flat-maisonette',
+  'Cosmetic refurbishment': null,
+  'Light refurbishment':    null,
+  'Full refurbishment':     null,
+  'New build':              null
 };
 
 // User-selected "Property type" — used to filter comps when the dev type
@@ -444,7 +448,7 @@ function scoreProfitability(margin) {
   return clamp((margin / 25) * 100, 0, 100);
 }
 
-const PLANNING_REFURB_TYPES = ['Light refurbishment', 'Full refurbishment'];
+const PLANNING_REFURB_TYPES = ['Cosmetic refurbishment', 'Light refurbishment', 'Full refurbishment'];
 const CONSERVATION_SENSITIVE_TYPES = ['New build', 'Loft conversion', 'Flat conversion'];
 
 function scorePlanningRisk(planwireResult, conservationArea, devType) {
@@ -475,12 +479,13 @@ function scoreFloodEnvironmental(floodZone) {
 }
 
 const CONSTRUCTION_BASE_BY_TYPE = {
-  'Light refurbishment': 90,
-  'Full refurbishment':  75,
-  'Loft conversion':     70,
-  'Flat conversion':     65,
-  'HMO conversion':      55,
-  'New build':           45
+  'Cosmetic refurbishment': 95,
+  'Light refurbishment':    90,
+  'Full refurbishment':     75,
+  'Loft conversion':        70,
+  'Flat conversion':        65,
+  'HMO conversion':         55,
+  'New build':              45
 };
 
 function scoreConstructionRisk(devType, bcis, maxBuildOverrun) {
