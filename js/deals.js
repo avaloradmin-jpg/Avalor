@@ -99,6 +99,7 @@ async function saveCurrentAppraisal() {
 
   try {
     const dealName = currentAppraisal.postcode + ' — ' + currentAppraisal.devType;
+    const verdict = currentAppraisal.margin >= 20 ? 'viable' : currentAppraisal.margin >= 12 ? 'marginal' : 'not-viable';
     const { error } = await sb.from('saved_deals').insert({
       user_id: currentUser.id,
       postcode: currentAppraisal.postcode,
@@ -117,7 +118,7 @@ async function saveCurrentAppraisal() {
       margin: parseFloat(currentAppraisal.margin.toFixed(1)),
       rlv: Math.round(currentAppraisal.rlv),
       growth_rate: currentAppraisal.growth,
-      verdict: currentAppraisal.margin >= 20 ? 'viable' : currentAppraisal.margin >= 12 ? 'marginal' : 'not-viable',
+      verdict,
       appraisal_data: JSON.stringify(currentAppraisal)
     });
 
@@ -126,6 +127,8 @@ async function saveCurrentAppraisal() {
     toast('Deal saved successfully', 'success');
     btn.innerHTML = '<i class="ti ti-check"></i> Saved';
     markOnboardingStep(2);
+
+    sendDealSavedEmail(verdict);
 
     setTimeout(() => {
       btn.innerHTML = '<i class="ti ti-bookmark"></i> Save appraisal';
@@ -138,6 +141,26 @@ async function saveCurrentAppraisal() {
     btn.innerHTML = '<i class="ti ti-bookmark"></i> Save appraisal';
     btn.disabled = false;
   }
+}
+
+// Best-effort confirmation email — never blocks the save or surfaces an error to the user.
+function sendDealSavedEmail(verdict) {
+  const verdictText = verdict === 'viable' ? 'Viable' : verdict === 'marginal' ? 'Marginal' : 'Not viable';
+  fetch('/api/send-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      postcode: currentAppraisal.postcode,
+      devType: currentAppraisal.devType,
+      gdv: currentAppraisal.gdv,
+      buildCost: currentAppraisal.buildMid,
+      profit: currentAppraisal.profit,
+      margin: currentAppraisal.margin.toFixed(1),
+      verdict: verdictText,
+      avalorScore: currentAppraisal.score.overall,
+      toEmail: currentUser.email
+    })
+  }).catch(() => {});
 }
 
 async function loadSavedDeals() {
