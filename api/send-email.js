@@ -32,7 +32,7 @@ function buildDealSavedEmail({ postcode, devType, gdv, buildCost, profit, margin
 
 function sendViaResend(apiKey, { to, subject, html }) {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ from: 'onboarding@resend.dev', to: [to], subject, html });
+    const body = JSON.stringify({ from: 'noreply@avalor.co.uk', to: [to], subject, html });
     const options = {
       hostname: 'api.resend.com',
       path: '/emails',

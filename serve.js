@@ -164,7 +164,7 @@ function buildDealSavedEmail({ postcode, devType, gdv, buildCost, profit, margin
 // Send an email via the Resend API using the account's API key
 function sendViaResend({ to, subject, html }) {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ from: 'onboarding@resend.dev', to: [to], subject, html });
+    const body = JSON.stringify({ from: 'noreply@avalor.co.uk', to: [to], subject, html });
     const options = {
       hostname: 'api.resend.com',
       path: '/emails',
