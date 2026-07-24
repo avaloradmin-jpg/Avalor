@@ -1474,7 +1474,10 @@
             <div style="font-size:16px;font-weight:600" id="account-plan-name">Professional — Free Trial</div>
             <div style="font-size:13px;color:var(--text-secondary);margin-top:3px" id="account-plan-desc">14 days remaining in your trial</div>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="openUpgrade()">Upgrade now</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm" id="account-manage-sub-btn" onclick="manageSubscription()" style="display:none">Manage subscription</button>
+            <button class="btn btn-primary btn-sm" onclick="openUpgrade()">Upgrade now</button>
+          </div>
         </div>
         <div style="font-size:13px;color:var(--text-secondary)">
           Questions about billing? Email us at <a href="mailto:hello@avalor.co.uk" style="color:var(--green)">hello@avalor.co.uk</a>

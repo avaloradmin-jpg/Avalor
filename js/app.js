@@ -211,6 +211,8 @@ async function launchApp() {
         plan === 'trial' ? 'Free Trial'
         : plan === 'professional' ? 'Professional'
         : 'Essential';
+      document.getElementById('account-manage-sub-btn').style.display =
+        (plan === 'essential' || plan === 'professional') ? '' : 'none';
 
       if (plan === 'trial') {
         const trialStart = new Date(profile.trial_started_at || currentUser.created_at);
@@ -286,6 +288,36 @@ async function choosePlan(plan) {
   }
 }
 
+async function manageSubscription() {
+  if (!currentUser) return;
+
+  const btn = document.getElementById('account-manage-sub-btn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Redirecting…';
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const res = await fetch('/api/stripe/create-portal-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+    });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      throw new Error(data.error || 'No portal URL returned');
+    }
+  } catch (err) {
+    toast('Something went wrong. Please try again.');
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
 // Handle post-Stripe redirect params on page load
 (function handleStripeReturn() {
   const params = new URLSearchParams(window.location.search);
@@ -309,6 +341,12 @@ async function choosePlan(plan) {
     history.replaceState(null, '', '/');
     // Open the upgrade modal once the app has rendered
     window.addEventListener('appReady', () => openUpgrade(), { once: true });
+  } else if (params.has('portal_return')) {
+    history.replaceState(null, '', '/');
+    // Billing portal changes (cancellation, payment method, etc.) are applied
+    // via webhook and may not have landed yet — this is an optimistic message,
+    // not a confirmation that anything actually changed.
+    toast('Welcome back — any billing changes may take a few seconds to reflect.');
   }
 })()
 

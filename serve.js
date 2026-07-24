@@ -23,6 +23,10 @@ const PLANWIRE_BASE = 'api.planwire.io';
 
 const SUPABASE_URL = 'jjegxgveeowrrgnfvaxn.supabase.co';
 const SUPABASE_SERVICE_KEY = ENV.SUPABASE_SERVICE_KEY || '';
+// Public anon/publishable key — matches js/supabase.js. Safe to embed; paired
+// with a caller's own access token it only ever returns rows RLS allows them
+// to see, which is what the portal-session route relies on.
+const SUPABASE_ANON_KEY = 'sb_publishable_WWzB1IuUp8jYWZ10Mf2-xA_R_4ai4xI';
 
 const RESEND_API_KEY = ENV.RESEND_API_KEY || '';
 
@@ -81,13 +85,13 @@ function readBody(req) {
   });
 }
 
-// Update a Supabase profile's plan using the service-role key
-async function updateSupabasePlan(userId, plan) {
+// Patch a Supabase profile row using the service-role key
+function patchProfile(filterQs, fields) {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ plan });
+    const body = JSON.stringify(fields);
     const options = {
       hostname: SUPABASE_URL,
-      path: `/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
+      path: `/rest/v1/profiles?${filterQs}`,
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -104,6 +108,67 @@ async function updateSupabasePlan(userId, plan) {
     req.on('error', reject);
     req.write(body);
     req.end();
+  });
+}
+
+const patchProfileById = (userId, fields) =>
+  patchProfile(`id=eq.${encodeURIComponent(userId)}`, fields);
+
+const patchProfileByCustomerId = (customerId, fields) =>
+  patchProfile(`stripe_customer_id=eq.${encodeURIComponent(customerId)}`, fields);
+
+// Look up a previously-saved Stripe customer for this user (service key), so
+// a resubscribe after cancelling reuses the same Stripe customer.
+function findStripeCustomerId(userId) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: SUPABASE_URL,
+      path: `/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=stripe_customer_id`,
+      method: 'GET',
+      headers: {
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Accept': 'application/json'
+      }
+    };
+    https.get(options, upstream => {
+      let body = '';
+      upstream.on('data', c => { body += c; });
+      upstream.on('end', () => {
+        try {
+          const rows = JSON.parse(body);
+          resolve(rows[0] && rows[0].stripe_customer_id ? rows[0].stripe_customer_id : null);
+        } catch (err) { reject(err); }
+      });
+    }).on('error', reject);
+  });
+}
+
+// Fetch the caller's own stripe_customer_id using their access token (anon
+// key + RLS), not the service key — so a client can never open someone
+// else's billing portal by passing a different userId.
+function fetchOwnStripeCustomerId(accessToken) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: SUPABASE_URL,
+      path: '/rest/v1/profiles?select=stripe_customer_id',
+      method: 'GET',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json'
+      }
+    };
+    https.get(options, upstream => {
+      let body = '';
+      upstream.on('data', c => { body += c; });
+      upstream.on('end', () => {
+        try {
+          const rows = JSON.parse(body);
+          resolve(rows[0] && rows[0].stripe_customer_id ? rows[0].stripe_customer_id : null);
+        } catch (err) { reject(err); }
+      });
+    }).on('error', reject);
   });
 }
 
@@ -210,10 +275,12 @@ http.createServer(async (req, res) => {
 
       if (!PRICES[plan]) return jsonResponse(res, 400, { error: 'Unknown plan' });
 
+      const existingCustomerId = userId ? await findStripeCustomerId(userId) : null;
+
       const session = await stripe.checkout.sessions.create({
         mode: 'subscription',
         payment_method_types: ['card'],
-        customer_email: email,
+        ...(existingCustomerId ? { customer: existingCustomerId } : { customer_email: email }),
         client_reference_id: userId,
         line_items: [{ price: PRICES[plan], quantity: 1 }],
         metadata: { plan },
@@ -224,6 +291,31 @@ http.createServer(async (req, res) => {
       return jsonResponse(res, 200, { url: session.url });
     } catch (err) {
       console.error('Checkout error:', err.message);
+      return jsonResponse(res, 500, { error: err.message });
+    }
+  }
+
+  // ── Stripe: create billing portal session ──────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/stripe/create-portal-session') {
+    const authHeader = req.headers['authorization'] || '';
+    const accessToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+    if (!accessToken) return jsonResponse(res, 401, { error: 'Missing access token' });
+
+    try {
+      await readBody(req); // drain body, unused
+
+      const customerId = await fetchOwnStripeCustomerId(accessToken);
+      if (!customerId) return jsonResponse(res, 400, { error: 'No active subscription found for this account' });
+
+      const session = await stripe.billingPortal.sessions.create({
+        customer: customerId,
+        return_url: `http://localhost:${PORT}/?portal_return=1`,
+      });
+
+      return jsonResponse(res, 200, { url: session.url });
+    } catch (err) {
+      console.error('Portal session error:', err.message);
       return jsonResponse(res, 500, { error: err.message });
     }
   }
@@ -242,21 +334,32 @@ http.createServer(async (req, res) => {
       return res.end(`Webhook Error: ${err.message}`);
     }
 
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
-      const userId = session.client_reference_id;
-      const plan = session.metadata && session.metadata.plan;
+    try {
+      if (event.type === 'checkout.session.completed') {
+        const session = event.data.object;
+        const userId = session.client_reference_id;
+        const plan = session.metadata && session.metadata.plan;
 
-      if (userId && plan && SUPABASE_SERVICE_KEY) {
-        try {
-          await updateSupabasePlan(userId, plan);
-          console.log(`Plan updated: user=${userId} plan=${plan}`);
-        } catch (err) {
-          console.error('Supabase update failed:', err.message);
+        if (userId && plan && SUPABASE_SERVICE_KEY) {
+          await patchProfileById(userId, { plan, stripe_customer_id: session.customer });
+          console.log(`Plan updated: user=${userId} plan=${plan} customer=${session.customer}`);
+        } else if (!SUPABASE_SERVICE_KEY) {
+          console.warn('SUPABASE_SERVICE_KEY not set — skipping profile update');
         }
-      } else if (!SUPABASE_SERVICE_KEY) {
-        console.warn('SUPABASE_SERVICE_KEY not set — skipping profile update');
+      } else if (event.type === 'customer.subscription.deleted') {
+        const subscription = event.data.object;
+        const customerId = subscription.customer;
+
+        if (customerId && SUPABASE_SERVICE_KEY) {
+          // Access continues until Stripe actually closes the subscription out
+          // at period end — this event only fires then. trial_started_at is
+          // left untouched so this reads as an already-expired trial.
+          await patchProfileByCustomerId(customerId, { plan: 'trial' });
+          console.log(`Subscription ended: customer=${customerId} — plan reset to trial`);
+        }
       }
+    } catch (err) {
+      console.error('Supabase update failed:', err.message);
     }
 
     res.writeHead(200);
