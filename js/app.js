@@ -219,6 +219,8 @@ async function launchApp() {
         const trialEnd = new Date(trialStart.getTime() + 14 * 24 * 60 * 60 * 1000);
         const daysLeft = Math.max(0, Math.ceil((trialEnd - new Date()) / (24 * 60 * 60 * 1000)));
         document.getElementById('account-plan-desc').textContent = `${daysLeft} days remaining in your free trial`;
+      } else {
+        document.getElementById('account-plan-desc').textContent = 'Renews monthly — manage or cancel below';
       }
 
       // Load onboarding progress
