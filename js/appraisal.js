@@ -34,6 +34,25 @@ const GDV_MULTIPLIER_REASON = {
   'New build':              'New build typically commands a premium over existing stock'
 };
 
+// Dev types where a single property can genuinely become multiple sellable
+// units. Everything else stays one unit — the units field is hidden and
+// forced to 1 for those.
+const MULTI_UNIT_DEV_TYPES = ['Flat conversion', 'HMO conversion', 'New build'];
+
+function updateUnitsVisibility() {
+  const devType = document.getElementById('dev-type').value;
+  const field = document.getElementById('units-field');
+  const input = document.getElementById('units');
+  const isMultiUnit = MULTI_UNIT_DEV_TYPES.includes(devType);
+
+  field.style.display = isMultiUnit ? '' : 'none';
+
+  if (!isMultiUnit || devType === 'New build') {
+    input.value = 1;
+  }
+}
+updateUnitsVisibility();
+
 // Regional fallback prices (£/sqm) — used when Land Registry returns < 5 comps
 const PRICE_PER_SQM_FALLBACK = {
   'London':     6500,
@@ -617,7 +636,9 @@ async function runAppraisal() {
   const region = document.getElementById('region').value;
   const purchase = parseFloat(document.getElementById('purchase').value) || 320000;
   const area = parseFloat(document.getElementById('floorarea').value) || 110;
-  const units = parseInt(document.getElementById('units').value) || 2;
+  const units = MULTI_UNIT_DEV_TYPES.includes(devType)
+    ? (parseInt(document.getElementById('units').value) || 2)
+    : 1;
 
   if (!postcode) {
     toast('Please enter a postcode', 'error');

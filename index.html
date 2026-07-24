@@ -1132,7 +1132,7 @@
         <div class="input-grid-3" style="margin-bottom:12px">
           <div>
             <label class="form-label">Development type</label>
-            <select class="form-input" id="dev-type">
+            <select class="form-input" id="dev-type" onchange="updateUnitsVisibility()">
               <option>Loft conversion</option>
               <option selected>Flat conversion</option>
               <option>HMO conversion</option>
@@ -1173,7 +1173,7 @@
             <label class="form-label">Floor area (m²)</label>
             <input type="number" class="form-input" id="floorarea" value="110" min="0"/>
           </div>
-          <div>
+          <div id="units-field">
             <label class="form-label">Number of units</label>
             <input type="number" class="form-input" id="units" value="2" min="1"/>
           </div>
