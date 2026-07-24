@@ -3,6 +3,7 @@
 let currentUser = null;
 let currentPlan = 'trial';
 let onboardingSteps = { 1: false, 2: false, 3: false };
+let appLaunched = false;
 
 // ─── AUTH ────────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,10 @@ async function handleLogin() {
   }
 
   currentUser = data.user;
-  launchApp();
+  // Don't call launchApp() here — the onAuthStateChange SIGNED_IN listener
+  // (registered in init()) fires from signInWithPassword() and calls it once
+  // the profile row is confirmed to exist. Calling it here too raced it,
+  // sometimes launching before the profile insert/update had landed.
 }
 
 async function handleSignup() {
@@ -100,6 +104,7 @@ async function handleSignup() {
 async function handleLogout() {
   await sb.auth.signOut();
   currentUser = null;
+  appLaunched = false;
   document.getElementById('app').style.display = 'none';
   showAuth('login');
 }
@@ -108,11 +113,9 @@ async function handleLogout() {
 
 async function init() {
   const { data: { session } } = await sb.auth.getSession();
-  let appLaunched = false;
 
   if (session?.user) {
     currentUser = session.user;
-    appLaunched = true;
     launchApp();
   } else {
     showAuth('login');
@@ -144,10 +147,7 @@ async function init() {
         }).eq('id', session.user.id);
       }
 
-      if (!appLaunched) {
-        appLaunched = true;
-        launchApp();
-      }
+      launchApp();
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
       document.getElementById('app').style.display = 'none';
@@ -157,6 +157,9 @@ async function init() {
 }
 
 async function launchApp() {
+  if (appLaunched) return;
+  appLaunched = true;
+
   document.getElementById('auth-login').style.display = 'none';
   document.getElementById('auth-signup').style.display = 'none';
   document.getElementById('app').style.display = 'block';
@@ -166,41 +169,50 @@ async function launchApp() {
     const { data: profile } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
 
     if (profile) {
+      // Normalize once — a plan value that isn't an exact 'trial'/'essential'/'professional'
+      // match (stray whitespace, wrong case from a manual DB edit, etc.) used to make the
+      // badge's strict if/else-if chain silently no-op, leaving the hardcoded "Trial" markup
+      // from the HTML in place, while this same normalization on the account page masked it.
+      const plan = ['trial', 'essential', 'professional'].includes(String(profile.plan || '').trim().toLowerCase())
+        ? String(profile.plan).trim().toLowerCase()
+        : 'trial';
+
       // Trial banner logic
       const trialStart = new Date(profile.trial_started_at || currentUser.created_at);
       const trialEnd = new Date(trialStart.getTime() + 14 * 24 * 60 * 60 * 1000);
       const now = new Date();
       const daysLeft = Math.max(0, Math.ceil((trialEnd - now) / (24 * 60 * 60 * 1000)));
 
-      currentPlan = profile.plan || 'trial';
+      currentPlan = plan;
 
-      if (profile.plan === 'trial') {
-        document.getElementById('tier-badge').textContent = `Trial — ${daysLeft}d left`;
-        document.getElementById('tier-badge').className = 'tier-badge trial';
+      const badge = document.getElementById('tier-badge');
+      if (plan === 'trial') {
+        badge.textContent = `Trial — ${daysLeft}d left`;
+        badge.className = 'tier-badge trial';
 
         if (daysLeft <= 3) {
           const banner = document.getElementById('trial-banner');
           banner.style.display = 'flex';
           document.getElementById('trial-days-left').textContent = `${daysLeft} day${daysLeft !== 1 ? 's' : ''}`;
         }
-      } else if (profile.plan === 'professional') {
-        document.getElementById('tier-badge').textContent = 'Professional';
-        document.getElementById('tier-badge').className = 'tier-badge professional';
+      } else if (plan === 'professional') {
+        badge.textContent = 'Professional';
+        badge.className = 'tier-badge professional';
         document.querySelector('.topbar-right .btn-primary').style.display = 'none';
-      } else if (profile.plan === 'essential') {
-        document.getElementById('tier-badge').textContent = 'Essential';
-        document.getElementById('tier-badge').className = 'tier-badge essential';
+      } else if (plan === 'essential') {
+        badge.textContent = 'Essential';
+        badge.className = 'tier-badge essential';
       }
 
       // Account page
       document.getElementById('account-name').value = profile.full_name || '';
       document.getElementById('account-email').value = currentUser.email || '';
       document.getElementById('account-plan-name').textContent =
-        profile.plan === 'trial' ? 'Free Trial'
-        : profile.plan === 'professional' ? 'Professional'
+        plan === 'trial' ? 'Free Trial'
+        : plan === 'professional' ? 'Professional'
         : 'Essential';
 
-      if (profile.plan === 'trial') {
+      if (plan === 'trial') {
         const trialStart = new Date(profile.trial_started_at || currentUser.created_at);
         const trialEnd = new Date(trialStart.getTime() + 14 * 24 * 60 * 60 * 1000);
         const daysLeft = Math.max(0, Math.ceil((trialEnd - new Date()) / (24 * 60 * 60 * 1000)));
