@@ -2,14 +2,40 @@
 
 let currentUser = null;
 let currentPlan = 'trial';
+let trialExpired = false;
 let onboardingSteps = { 1: false, 2: false, 3: false };
 let appLaunched = false;
+
+// Single source of truth for trial day-count/expiry — previously duplicated
+// (and could drift) between the nav badge/banner and the account page.
+function getTrialStatus(trialStart) {
+  const trialEndMs = trialStart.getTime() + 14 * 24 * 60 * 60 * 1000;
+  const daysLeft = Math.max(0, Math.ceil((trialEndMs - Date.now()) / (24 * 60 * 60 * 1000)));
+  return { daysLeft, expired: Date.now() >= trialEndMs };
+}
+
+function showTrialExpiredScreen() {
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('trial-expired').style.display = 'block';
+}
 
 // ─── AUTH ────────────────────────────────────────────────────────────────────
 
 function showAuth(view) {
+  document.getElementById('landing').style.display = 'none';
   document.getElementById('auth-login').style.display = view === 'login' ? 'block' : 'none';
   document.getElementById('auth-signup').style.display = view === 'signup' ? 'block' : 'none';
+}
+
+function showLanding() {
+  document.getElementById('auth-login').style.display = 'none';
+  document.getElementById('auth-signup').style.display = 'none';
+  document.getElementById('landing').style.display = 'block';
+}
+
+function hideInitialLoader() {
+  const loader = document.getElementById('initial-loader');
+  if (loader) loader.style.display = 'none';
 }
 
 async function handleLogin() {
@@ -104,9 +130,11 @@ async function handleSignup() {
 async function handleLogout() {
   await sb.auth.signOut();
   currentUser = null;
+  trialExpired = false;
   appLaunched = false;
   document.getElementById('app').style.display = 'none';
-  showAuth('login');
+  document.getElementById('trial-expired').style.display = 'none';
+  showLanding();
 }
 
 // ─── APP INIT ─────────────────────────────────────────────────────────────────
@@ -118,7 +146,8 @@ async function init() {
     currentUser = session.user;
     launchApp();
   } else {
-    showAuth('login');
+    hideInitialLoader();
+    showLanding();
   }
 
   sb.auth.onAuthStateChange(async (event, session) => {
@@ -150,8 +179,10 @@ async function init() {
       launchApp();
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
+      trialExpired = false;
       document.getElementById('app').style.display = 'none';
-      showAuth('login');
+      document.getElementById('trial-expired').style.display = 'none';
+      showLanding();
     }
   });
 }
@@ -160,9 +191,9 @@ async function launchApp() {
   if (appLaunched) return;
   appLaunched = true;
 
+  document.getElementById('landing').style.display = 'none';
   document.getElementById('auth-login').style.display = 'none';
   document.getElementById('auth-signup').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
 
   // Load profile
   if (currentUser) {
@@ -177,13 +208,23 @@ async function launchApp() {
         ? String(profile.plan).trim().toLowerCase()
         : 'trial';
 
-      // Trial banner logic
       const trialStart = new Date(profile.trial_started_at || currentUser.created_at);
-      const trialEnd = new Date(trialStart.getTime() + 14 * 24 * 60 * 60 * 1000);
-      const now = new Date();
-      const daysLeft = Math.max(0, Math.ceil((trialEnd - now) / (24 * 60 * 60 * 1000)));
+      const { daysLeft, expired } = getTrialStatus(trialStart);
 
       currentPlan = plan;
+      trialExpired = plan === 'trial' && expired;
+
+      // Hard stop: an expired trial never sees the app itself, just the
+      // paywall — enforced for real server-side (requireActiveAccess in
+      // serve.js gates the paid data proxies), this is just the matching UI.
+      if (trialExpired) {
+        hideInitialLoader();
+        showTrialExpiredScreen();
+        window.dispatchEvent(new Event('appReady'));
+        return;
+      }
+
+      document.getElementById('app').style.display = 'block';
 
       const badge = document.getElementById('tier-badge');
       if (plan === 'trial') {
@@ -214,22 +255,22 @@ async function launchApp() {
       document.getElementById('account-manage-sub-btn').style.display =
         (plan === 'essential' || plan === 'professional') ? '' : 'none';
 
-      if (plan === 'trial') {
-        const trialStart = new Date(profile.trial_started_at || currentUser.created_at);
-        const trialEnd = new Date(trialStart.getTime() + 14 * 24 * 60 * 60 * 1000);
-        const daysLeft = Math.max(0, Math.ceil((trialEnd - new Date()) / (24 * 60 * 60 * 1000)));
-        document.getElementById('account-plan-desc').textContent = `${daysLeft} days remaining in your free trial`;
-      } else {
-        document.getElementById('account-plan-desc').textContent = 'Renews monthly — manage or cancel below';
-      }
+      document.getElementById('account-plan-desc').textContent =
+        plan === 'trial' ? `${daysLeft} days remaining in your free trial` : 'Renews monthly — manage or cancel below';
 
       // Load onboarding progress
       if (profile.onboarding_steps) {
         onboardingSteps = JSON.parse(profile.onboarding_steps);
         updateOnboardingUI();
       }
+    } else {
+      document.getElementById('app').style.display = 'block';
     }
+  } else {
+    document.getElementById('app').style.display = 'block';
   }
+
+  hideInitialLoader();
 
   window.dispatchEvent(new Event('appReady'));
 }
@@ -263,10 +304,10 @@ function closeUpgradeOutside(e) {
   if (e.target === document.getElementById('upgrade-modal')) closeUpgrade();
 }
 
-async function choosePlan(plan) {
+async function choosePlan(plan, btnEl) {
   if (!currentUser) return;
 
-  const btn = document.getElementById(`btn-choose-${plan}`);
+  const btn = btnEl || document.getElementById(`btn-choose-${plan}`);
   const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Redirecting…';

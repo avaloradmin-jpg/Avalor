@@ -65,9 +65,17 @@ create policy "Users can view own deals"
   on saved_deals for select
   using (auth.uid() = user_id);
 
+-- Only Professional-plan users can save deals — enforced here so it holds even
+-- if the app's UI is bypassed.
 create policy "Users can insert own deals"
   on saved_deals for insert
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from profiles
+      where profiles.id = auth.uid() and profiles.plan = 'professional'
+    )
+  );
 
 create policy "Users can delete own deals"
   on saved_deals for delete

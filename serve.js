@@ -172,6 +172,80 @@ function fetchOwnStripeCustomerId(accessToken) {
   });
 }
 
+// Fetch the caller's own plan + trial start using their access token (anon
+// key + RLS) — same pattern as fetchOwnStripeCustomerId above. Used to gate
+// the paid Homedata/PlanWire proxies below.
+function fetchOwnPlanStatus(accessToken) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: SUPABASE_URL,
+      path: '/rest/v1/profiles?select=plan,trial_started_at',
+      method: 'GET',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json'
+      }
+    };
+    https.get(options, upstream => {
+      let body = '';
+      upstream.on('data', c => { body += c; });
+      upstream.on('end', () => {
+        try {
+          const rows = JSON.parse(body);
+          resolve(Array.isArray(rows) && rows[0] ? rows[0] : null);
+        } catch (err) { reject(err); }
+      });
+    }).on('error', reject);
+  });
+}
+
+function isTrialExpired(profile) {
+  if (!profile) return true;
+  if (profile.plan === 'essential' || profile.plan === 'professional') return false;
+
+  const start = new Date(profile.trial_started_at);
+  if (isNaN(start.getTime())) return true;
+
+  const trialEndMs = start.getTime() + 14 * 24 * 60 * 60 * 1000;
+  return Date.now() >= trialEndMs;
+}
+
+// Gate for the paid Homedata/PlanWire proxies — requires a valid Supabase
+// access token for an account that's either on a paid plan or still inside
+// its 14-day trial window. Fails closed: any missing token, invalid token, or
+// lookup error blocks the request rather than letting it through. Returns
+// false (and has already written the error response) if access is denied.
+async function requireActiveAccess(req, res) {
+  const authHeader = req.headers['authorization'] || '';
+  const accessToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  if (!accessToken) {
+    jsonResponse(res, 401, { error: 'Missing access token' });
+    return false;
+  }
+
+  let profile;
+  try {
+    profile = await fetchOwnPlanStatus(accessToken);
+  } catch (err) {
+    jsonResponse(res, 401, { error: 'Invalid access token' });
+    return false;
+  }
+
+  if (!profile) {
+    jsonResponse(res, 401, { error: 'Invalid access token' });
+    return false;
+  }
+
+  if (isTrialExpired(profile)) {
+    jsonResponse(res, 403, { error: 'trial_expired' });
+    return false;
+  }
+
+  return true;
+}
+
 // Never add user_id, id, or share_token here — this list is returned to anonymous visitors.
 const SHARED_DEAL_PUBLIC_FIELDS = [
   'postcode', 'name', 'dev_type', 'prop_type', 'region',
@@ -385,10 +459,15 @@ http.createServer(async (req, res) => {
   }
 
   // ── Existing proxy routes ───────────────────────────────────────────────────
+  // Both hit paid third-party APIs, so every call must be tied to a signed-in
+  // account that's either on a paid plan or still within its trial window —
+  // otherwise this is an open, unmetered tap on API quota we pay for.
   if (req.url.startsWith('/api/homedata')) {
+    if (!(await requireActiveAccess(req, res))) return;
     return proxyHomedata(req, res);
   }
   if (req.url.startsWith('/api/planwire')) {
+    if (!(await requireActiveAccess(req, res))) return;
     return proxyRequest(req, res, PLANWIRE_BASE, upstreamPathFromQuery(req), { 'X-API-Key': PLANWIRE_KEY });
   }
 

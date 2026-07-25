@@ -131,6 +131,31 @@ const PPD_API = 'https://landregistry.data.gov.uk/data/ppi/transaction-record.js
 const POSTCODES_API = 'https://api.postcodes.io/postcodes/';
 const HOMEDATA_PROXY = '/api/homedata';
 
+// Attaches the caller's own Supabase access token to requests against our paid
+// Homedata/PlanWire proxies, which the server uses to check plan/trial status
+// (see requireActiveAccess in serve.js). A 403 with { error: 'trial_expired' }
+// is surfaced as a distinguishable error so runAppraisal() can show the
+// trial-ended screen instead of a generic fetch-failed message.
+async function authedFetch(url, opts = {}) {
+  const { data: { session } } = await sb.auth.getSession();
+  const resp = await fetch(url, {
+    ...opts,
+    headers: { ...(opts.headers || {}), Authorization: `Bearer ${session?.access_token || ''}` }
+  });
+
+  if (resp.status === 403) {
+    let body = null;
+    try { body = await resp.clone().json(); } catch (_) {}
+    if (body && body.error === 'trial_expired') {
+      const err = new Error('trial_expired');
+      err.trialExpired = true;
+      throw err;
+    }
+  }
+
+  return resp;
+}
+
 function epcScoreToBand(score) {
   if (score == null) return null;
   if (score >= 92) return 'A';
@@ -144,7 +169,7 @@ function epcScoreToBand(score) {
 
 async function resolveHomedataAddresses(postcode) {
   const pcClean = postcode.replace(/\s+/g, '').toUpperCase();
-  const resp = await fetch(`${HOMEDATA_PROXY}?path=${encodeURIComponent('address/postcode/' + pcClean + '/')}`, {
+  const resp = await authedFetch(`${HOMEDATA_PROXY}?path=${encodeURIComponent('address/postcode/' + pcClean + '/')}`, {
     signal: AbortSignal.timeout(6000)
   });
   if (!resp.ok) throw new Error('Homedata postcode lookup failed: ' + resp.status);
@@ -159,7 +184,7 @@ async function fetchEpcData(addresses) {
   for (const addr of addresses.slice(0, 5)) {
     const uprn = addr.uprn;
     if (!uprn) continue;
-    const resp = await fetch(`${HOMEDATA_PROXY}?path=${encodeURIComponent('epc-checker/' + uprn + '/')}`, {
+    const resp = await authedFetch(`${HOMEDATA_PROXY}?path=${encodeURIComponent('epc-checker/' + uprn + '/')}`, {
       signal: AbortSignal.timeout(5000)
     });
     if (!resp.ok) continue;
@@ -195,7 +220,7 @@ async function fetchConservationArea(lat, lng) {
 
 async function fetchPlanwireData(lat, lng) {
   const url = `${PLANWIRE_PROXY}?path=${encodeURIComponent('v1/applications/nearby')}&lat=${lat}&lng=${lng}&radius_km=0.5&limit=10`;
-  const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  const resp = await authedFetch(url, { signal: AbortSignal.timeout(8000) });
   if (!resp.ok) throw new Error('PlanWire API error ' + resp.status);
   const data = await resp.json();
   const apps = data.data ?? [];
@@ -231,7 +256,7 @@ async function fetchPlanwireData(lat, lng) {
 
 async function fetchPlanwireApps(lat, lng, radiusKm) {
   const url = `${PLANWIRE_PROXY}?path=${encodeURIComponent('v1/applications/nearby')}&lat=${lat}&lng=${lng}&radius_km=${radiusKm}&limit=100`;
-  const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  const resp = await authedFetch(url, { signal: AbortSignal.timeout(8000) });
   if (!resp.ok) throw new Error('PlanWire API error ' + resp.status);
   const data = await resp.json();
   return data.data ?? [];
@@ -630,6 +655,11 @@ function hideDataBanner() {
 let currentAppraisal = null;
 
 async function runAppraisal() {
+  if (typeof trialExpired !== 'undefined' && trialExpired) {
+    showTrialExpiredScreen();
+    return;
+  }
+
   const postcode = document.getElementById('postcode').value.trim().toUpperCase();
   const devType = document.getElementById('dev-type').value;
   const propType = document.getElementById('prop-type').value;
@@ -694,6 +724,21 @@ async function runAppraisal() {
     lrCoords ? fetchConservationArea(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
     lrCoords ? fetchDevTypePlanningIntel(lrCoords.lat, lrCoords.lng, devType) : Promise.reject('No coords')
   ]);
+
+  // Defense in depth: the client-side gate at the top of this function should
+  // catch an expired trial before any of this fires, but if the trial expired
+  // mid-session (no page reload since it started), the server-side check in
+  // requireActiveAccess (serve.js) will reject the proxy calls with a flagged
+  // trial_expired error instead. Show the same paywall rather than a
+  // degraded/broken appraisal.
+  const hitTrialWall = [addrOutcome, epcOutcome, planwireOutcome, devTypePlanningOutcome]
+    .some(o => o.status === 'rejected' && o.reason && o.reason.trialExpired);
+  if (hitTrialWall) {
+    btn.innerHTML = 'Run appraisal';
+    btn.disabled = false;
+    showTrialExpiredScreen();
+    return;
+  }
 
   if (epcOutcome.status === 'fulfilled') epcResult = epcOutcome.value;
   if (floodOutcome.status === 'fulfilled') floodZone = floodOutcome.value;
@@ -1394,6 +1439,11 @@ function buildMissedItemsSection(a) {
 
 function exportPdf() {
   if (!currentAppraisal) return;
+
+  if (typeof currentPlan !== 'undefined' && currentPlan === 'trial') {
+    openUpgrade();
+    return;
+  }
 
   // Populate print header
   document.getElementById('pdf-meta-postcode').textContent = currentAppraisal.postcode;

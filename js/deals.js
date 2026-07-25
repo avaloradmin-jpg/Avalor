@@ -92,6 +92,10 @@ async function revokeShareFromModal() {
 async function saveCurrentAppraisal() {
   if (!currentAppraisal) return;
   if (!currentUser) { toast('Please sign in to save deals', 'error'); return; }
+  if (typeof currentPlan !== 'undefined' && currentPlan !== 'professional') {
+    openUpgrade();
+    return;
+  }
 
   const btn = document.getElementById('save-btn');
   btn.innerHTML = '<span class="loading-spinner"></span> Saving…';
@@ -263,6 +267,17 @@ async function loadCompare() {
   if (!currentUser) return;
 
   const container = document.getElementById('compare-content');
+
+  if (typeof currentPlan !== 'undefined' && currentPlan !== 'professional') {
+    container.innerHTML = `
+      <div class="pro-lock">
+        <i class="ti ti-lock"></i>
+        <h3>Deal comparison is a Professional feature</h3>
+        <p>Upgrade to Professional to compare your saved deals side-by-side.</p>
+        <button class="btn btn-primary" onclick="openUpgrade()">Upgrade to Professional</button>
+      </div>`;
+    return;
+  }
 
   const { data, error } = await sb
     .from('saved_deals')

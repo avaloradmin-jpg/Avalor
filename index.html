@@ -183,6 +183,136 @@
       display: none;
     }
 
+    /* INITIAL LOADER */
+    #initial-loader {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      z-index: 9999;
+    }
+
+    .loading-spinner-lg {
+      display: inline-block;
+      width: 30px;
+      height: 30px;
+      border: 3px solid var(--border);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    /* LANDING PAGE */
+    .landing-nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 2rem;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(6px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .landing-nav-logo { font-size: 22px; font-weight: 600; letter-spacing: -0.5px; color: var(--text); }
+    .landing-nav-logo span { color: var(--green); }
+
+    .landing-nav-actions { display: flex; align-items: center; gap: 1.5rem; }
+
+    .landing-signin-link {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .landing-signin-link:hover { color: var(--green); }
+
+    .landing-hero {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 5rem 2rem 4rem;
+      text-align: center;
+    }
+
+    .landing-hero h1 {
+      font-size: 40px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+      line-height: 1.25;
+      margin-bottom: 1.25rem;
+      color: var(--text);
+    }
+
+    .landing-hero-sub {
+      font-size: 17px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+
+    .btn-lg { padding: 14px 30px; font-size: 16px; }
+
+    .landing-hero-note {
+      margin-top: 0.9rem;
+      font-size: 13px;
+      color: var(--text-tertiary);
+    }
+
+    .landing-section { max-width: 1080px; margin: 0 auto; padding: 3.5rem 2rem; }
+
+    .landing-section-title {
+      text-align: center;
+      font-size: 26px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.5rem;
+    }
+
+    .landing-section-sub {
+      text-align: center;
+      font-size: 15px;
+      color: var(--text-secondary);
+      margin-bottom: 2.5rem;
+    }
+
+    .benefits-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+
+    .benefit-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 1.75rem;
+    }
+
+    .benefit-card i { font-size: 26px; color: var(--green); display: block; margin-bottom: 0.85rem; }
+    .benefit-card h3 { font-size: 16px; font-weight: 600; margin-bottom: 0.4rem; color: var(--text); }
+    .benefit-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.55; }
+
+    .landing-pricing-wrap { max-width: 720px; margin: 0 auto; }
+
+    .landing-cta-band {
+      background: var(--green-light);
+      padding: 3.5rem 2rem;
+      text-align: center;
+    }
+
+    .landing-cta-band h2 { font-size: 24px; font-weight: 600; color: var(--green-text); margin-bottom: 1.5rem; }
+
+    .landing-footer {
+      padding: 2rem;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-tertiary);
+      border-top: 1px solid var(--border);
+    }
+
     /* TRIAL BANNER */
     .trial-banner {
       background: var(--amber-light);
@@ -677,6 +807,9 @@
     .upgrade-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
 
     .upgrade-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 1.25rem;
@@ -685,6 +818,10 @@
     .upgrade-card.featured { border: 2px solid var(--green); }
 
     .popular-badge {
+      position: absolute;
+      top: -11px;
+      left: 50%;
+      transform: translateX(-50%);
       display: inline-block;
       font-size: 10px;
       padding: 2px 8px;
@@ -692,14 +829,14 @@
       background: var(--green);
       color: #fff;
       font-weight: 600;
-      margin-bottom: 8px;
+      white-space: nowrap;
     }
 
     .upgrade-plan-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
     .upgrade-price { font-size: 28px; font-weight: 600; margin-bottom: 10px; }
     .upgrade-price span { font-size: 14px; color: var(--text-secondary); font-weight: 400; }
 
-    .upgrade-features { list-style: none; margin-bottom: 1.25rem; }
+    .upgrade-features { list-style: none; margin-bottom: 1.25rem; flex: 1; }
     .upgrade-features li { font-size: 13px; color: var(--text-secondary); padding: 4px 0; display: flex; align-items: center; gap: 7px; }
     .upgrade-features li i { color: var(--green); font-size: 14px; flex-shrink: 0; }
     .upgrade-features li.muted { color: var(--text-tertiary); }
@@ -813,9 +950,12 @@
 
     /* RESPONSIVE */
     @media (max-width: 768px) {
-      .two-col, .input-grid-3, .metrics-grid, .upgrade-grid { grid-template-columns: 1fr; }
+      .two-col, .input-grid-3, .metrics-grid, .upgrade-grid, .benefits-grid { grid-template-columns: 1fr; }
       .topbar-nav { display: none; }
       .page-wrap { padding: 1rem; }
+      .landing-hero h1 { font-size: 30px; }
+      .landing-nav { padding: 14px 1.25rem; }
+      .landing-hero, .landing-section { padding-left: 1.25rem; padding-right: 1.25rem; }
     }
     /* ── PDF EXPORT ─────────────────────────────────────────────────────────── */
     #pdf-print-header { display: none; }
@@ -982,8 +1122,105 @@
 </head>
 <body>
 
+<!-- INITIAL LOADER -->
+<div id="initial-loader">
+  <div class="loading-spinner-lg"></div>
+</div>
+
+<!-- LANDING PAGE -->
+<div id="landing" style="display:none">
+  <nav class="landing-nav">
+    <div class="landing-nav-logo">Avalo<span>r</span></div>
+    <div class="landing-nav-actions">
+      <a class="landing-signin-link" onclick="showAuth('login')">Sign in</a>
+      <button class="btn btn-primary btn-sm" onclick="showAuth('signup')">Start free trial</button>
+    </div>
+  </nav>
+
+  <div class="landing-hero">
+    <h1>Analyse any UK development opportunity in minutes — and know whether it's worth pursuing</h1>
+    <p class="landing-hero-sub">Avalor is a development appraisal tool for UK developers, sourcers and investors. Get instant GDV, costs, risk flags and a clear verdict on any site — backed by live Land Registry, planning and flood data.</p>
+    <button class="btn btn-primary btn-lg" onclick="showAuth('signup')">Start free trial</button>
+    <div class="landing-hero-note">14-day free trial &middot; No card required</div>
+  </div>
+
+  <div class="landing-section">
+    <div class="landing-section-title">Everything you need to size up a site</div>
+    <div class="landing-section-sub">From raw data to a go/no-go decision, in one place.</div>
+    <div class="benefits-grid">
+      <div class="benefit-card">
+        <i class="ti ti-database"></i>
+        <h3>Live Land Registry, planning &amp; flood data</h3>
+        <p>Every appraisal is grounded in live HM Land Registry price data, planning history and Environment Agency flood risk — not guesswork.</p>
+      </div>
+      <div class="benefit-card">
+        <i class="ti ti-gauge"></i>
+        <h3>Avalor Score</h3>
+        <p>A single, weighted score that captures viability, risk and planning likelihood at a glance, so you can compare opportunities fast.</p>
+      </div>
+      <div class="benefit-card">
+        <i class="ti ti-bolt"></i>
+        <h3>Instant viability verdict</h3>
+        <p>GDV, build costs, SDLT and profit margin calculated in minutes, with a clear verdict on whether a deal is worth pursuing.</p>
+      </div>
+      <div class="benefit-card">
+        <i class="ti ti-shield-check"></i>
+        <h3>Deal resilience analysis</h3>
+        <p>Stress-test each deal against cost overruns, sales price drops and finance rate changes before you commit.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="landing-section">
+    <div class="landing-section-title">Simple, transparent pricing</div>
+    <div class="landing-section-sub">Start with a 14-day free trial. No card required.</div>
+    <div class="landing-pricing-wrap">
+      <div class="upgrade-grid">
+        <div class="upgrade-card">
+          <div class="upgrade-plan-name">Essential</div>
+          <div class="upgrade-price">£49<span>/month</span></div>
+          <ul class="upgrade-features">
+            <li><i class="ti ti-check"></i>Full development appraisal with Avalor Score</li>
+            <li><i class="ti ti-check"></i>GDV, SDLT, build costs &amp; sensitivity analysis</li>
+            <li><i class="ti ti-check"></i>Risk &amp; planning flags (flood, planning, conservation)</li>
+            <li><i class="ti ti-check"></i>Deal resilience &amp; "what if" scenarios</li>
+            <li><i class="ti ti-check"></i>Area snapshot &amp; price data</li>
+            <li><i class="ti ti-check"></i>PDF export (watermarked)</li>
+            <li class="muted"><i class="ti ti-x"></i>Saved appraisals</li>
+            <li class="muted"><i class="ti ti-x"></i>Deal comparison</li>
+            <li class="muted"><i class="ti ti-x"></i>Shareable links</li>
+            <li class="muted"><i class="ti ti-x"></i>Priority support</li>
+          </ul>
+          <button class="btn btn-full" onclick="showAuth('signup')">Start free trial</button>
+        </div>
+        <div class="upgrade-card featured">
+          <div class="popular-badge">Most popular</div>
+          <div class="upgrade-plan-name">Professional</div>
+          <div class="upgrade-price">£69<span>/month</span></div>
+          <ul class="upgrade-features">
+            <li><i class="ti ti-check"></i>Everything in Essential</li>
+            <li><i class="ti ti-check"></i>Save unlimited appraisals</li>
+            <li><i class="ti ti-check"></i>Compare deals side by side</li>
+            <li><i class="ti ti-check"></i>Clean PDF export (no watermark)</li>
+            <li><i class="ti ti-check"></i>Shareable deal links</li>
+            <li><i class="ti ti-check"></i>Priority email support</li>
+          </ul>
+          <button class="btn btn-primary btn-full" onclick="showAuth('signup')">Start free trial</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="landing-cta-band">
+    <h2>Ready to see whether your next deal stacks up?</h2>
+    <button class="btn btn-primary btn-lg" onclick="showAuth('signup')">Start free trial</button>
+  </div>
+
+  <div class="landing-footer">&copy; 2026 Avalor. All rights reserved.</div>
+</div>
+
 <!-- AUTH: LOGIN -->
-<div id="auth-login">
+<div id="auth-login" style="display:none">
   <div class="auth-wrap">
     <div class="auth-box">
       <div class="auth-logo">Avalo<span>r</span></div>
@@ -1522,6 +1759,57 @@
 
 </div><!-- /app -->
 
+<!-- TRIAL EXPIRED -->
+<div id="trial-expired" style="display:none">
+  <nav class="landing-nav">
+    <div class="landing-nav-logo">Avalo<span>r</span></div>
+    <a class="landing-signin-link" onclick="handleLogout()">Sign out</a>
+  </nav>
+
+  <div class="landing-hero">
+    <h1 style="font-size:32px">Your free trial has ended</h1>
+    <p class="landing-hero-sub">Subscribe to keep running appraisals, export PDFs, save deals and compare opportunities.</p>
+  </div>
+
+  <div class="landing-section" style="padding-top:0">
+    <div class="landing-pricing-wrap">
+      <div class="upgrade-grid">
+        <div class="upgrade-card">
+          <div class="upgrade-plan-name">Essential</div>
+          <div class="upgrade-price">£49<span>/month</span></div>
+          <ul class="upgrade-features">
+            <li><i class="ti ti-check"></i>Full development appraisal with Avalor Score</li>
+            <li><i class="ti ti-check"></i>GDV, SDLT, build costs &amp; sensitivity analysis</li>
+            <li><i class="ti ti-check"></i>Risk &amp; planning flags (flood, planning, conservation)</li>
+            <li><i class="ti ti-check"></i>Deal resilience &amp; "what if" scenarios</li>
+            <li><i class="ti ti-check"></i>Area snapshot &amp; price data</li>
+            <li><i class="ti ti-check"></i>PDF export (watermarked)</li>
+            <li class="muted"><i class="ti ti-x"></i>Saved appraisals</li>
+            <li class="muted"><i class="ti ti-x"></i>Deal comparison</li>
+            <li class="muted"><i class="ti ti-x"></i>Shareable links</li>
+            <li class="muted"><i class="ti ti-x"></i>Priority support</li>
+          </ul>
+          <button class="btn btn-full" onclick="choosePlan('essential', this)">Choose Essential</button>
+        </div>
+        <div class="upgrade-card featured">
+          <div class="popular-badge">Most popular</div>
+          <div class="upgrade-plan-name">Professional</div>
+          <div class="upgrade-price">£69<span>/month</span></div>
+          <ul class="upgrade-features">
+            <li><i class="ti ti-check"></i>Everything in Essential</li>
+            <li><i class="ti ti-check"></i>Save unlimited appraisals</li>
+            <li><i class="ti ti-check"></i>Compare deals side by side</li>
+            <li><i class="ti ti-check"></i>Clean PDF export (no watermark)</li>
+            <li><i class="ti ti-check"></i>Shareable deal links</li>
+            <li><i class="ti ti-check"></i>Priority email support</li>
+          </ul>
+          <button class="btn btn-primary btn-full" onclick="choosePlan('professional', this)">Choose Professional</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- UPGRADE MODAL -->
 <div class="modal-backdrop" id="upgrade-modal" onclick="closeUpgradeOutside(event)">
   <div class="modal">
@@ -1533,14 +1821,16 @@
         <div class="upgrade-plan-name">Essential</div>
         <div class="upgrade-price">£49<span>/month</span></div>
         <ul class="upgrade-features">
-          <li><i class="ti ti-check"></i>Full development appraisal</li>
-          <li><i class="ti ti-check"></i>GDV, SDLT &amp; sensitivity</li>
-          <li><i class="ti ti-check"></i>Risk &amp; planning flags</li>
+          <li><i class="ti ti-check"></i>Full development appraisal with Avalor Score</li>
+          <li><i class="ti ti-check"></i>GDV, SDLT, build costs &amp; sensitivity analysis</li>
+          <li><i class="ti ti-check"></i>Risk &amp; planning flags (flood, planning, conservation)</li>
+          <li><i class="ti ti-check"></i>Deal resilience &amp; "what if" scenarios</li>
           <li><i class="ti ti-check"></i>Area snapshot &amp; price data</li>
-          <li><i class="ti ti-check"></i>Deal resilience analysis</li>
+          <li><i class="ti ti-check"></i>PDF export (watermarked)</li>
           <li class="muted"><i class="ti ti-x"></i>Saved appraisals</li>
           <li class="muted"><i class="ti ti-x"></i>Deal comparison</li>
-          <li class="muted"><i class="ti ti-x"></i>PDF export</li>
+          <li class="muted"><i class="ti ti-x"></i>Shareable links</li>
+          <li class="muted"><i class="ti ti-x"></i>Priority support</li>
         </ul>
         <button class="btn btn-full" id="btn-choose-essential" onclick="choosePlan('essential')">Choose Essential</button>
       </div>
@@ -1550,12 +1840,10 @@
         <div class="upgrade-price">£69<span>/month</span></div>
         <ul class="upgrade-features">
           <li><i class="ti ti-check"></i>Everything in Essential</li>
-          <li><i class="ti ti-check"></i>Unlimited saved appraisals</li>
-          <li><i class="ti ti-check"></i>Deal comparison</li>
-          <li><i class="ti ti-check"></i>PDF export &amp; sharing</li>
-          <li><i class="ti ti-check"></i>Residual land value</li>
-          <li><i class="ti ti-check"></i>Dev finance estimator</li>
-          <li><i class="ti ti-check"></i>Agent &amp; professional fees</li>
+          <li><i class="ti ti-check"></i>Save unlimited appraisals</li>
+          <li><i class="ti ti-check"></i>Compare deals side by side</li>
+          <li><i class="ti ti-check"></i>Clean PDF export (no watermark)</li>
+          <li><i class="ti ti-check"></i>Shareable deal links</li>
           <li><i class="ti ti-check"></i>Priority email support</li>
         </ul>
         <button class="btn btn-primary btn-full" id="btn-choose-professional" onclick="choosePlan('professional')">Choose Professional</button>
