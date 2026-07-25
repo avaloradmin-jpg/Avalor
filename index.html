@@ -233,6 +233,18 @@
 
     .landing-signin-link:hover { color: var(--green); }
 
+    .subscribe-now-link {
+      display: block;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-tertiary);
+      margin-top: 10px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .subscribe-now-link:hover { color: var(--green); text-decoration: underline; }
+
     .landing-hero {
       max-width: 760px;
       margin: 0 auto;
@@ -1132,15 +1144,15 @@
   <nav class="landing-nav">
     <div class="landing-nav-logo">Avalo<span>r</span></div>
     <div class="landing-nav-actions">
-      <a class="landing-signin-link" onclick="showAuth('login')">Sign in</a>
-      <button class="btn btn-primary btn-sm" onclick="showAuth('signup')">Start free trial</button>
+      <a class="landing-signin-link" onclick="startSignIn()">Sign in</a>
+      <button class="btn btn-primary btn-sm" onclick="startTrialSignup()">Start free trial</button>
     </div>
   </nav>
 
   <div class="landing-hero">
     <h1>Analyse any UK development opportunity in minutes — and know whether it's worth pursuing</h1>
     <p class="landing-hero-sub">Avalor is a development appraisal tool for UK developers, sourcers and investors. Get instant GDV, costs, risk flags and a clear verdict on any site — backed by live Land Registry, planning and flood data.</p>
-    <button class="btn btn-primary btn-lg" onclick="showAuth('signup')">Start free trial</button>
+    <button class="btn btn-primary btn-lg" onclick="startTrialSignup()">Start free trial</button>
     <div class="landing-hero-note">14-day free trial &middot; No card required</div>
   </div>
 
@@ -1191,7 +1203,8 @@
             <li class="muted"><i class="ti ti-x"></i>Shareable links</li>
             <li class="muted"><i class="ti ti-x"></i>Priority support</li>
           </ul>
-          <button class="btn btn-full" onclick="showAuth('signup')">Start free trial</button>
+          <button class="btn btn-full" onclick="startTrialSignup()">Start free trial</button>
+          <a class="subscribe-now-link" onclick="startCheckout('essential')">or subscribe now — skip the trial</a>
         </div>
         <div class="upgrade-card featured">
           <div class="popular-badge">Most popular</div>
@@ -1205,7 +1218,8 @@
             <li><i class="ti ti-check"></i>Shareable deal links</li>
             <li><i class="ti ti-check"></i>Priority email support</li>
           </ul>
-          <button class="btn btn-primary btn-full" onclick="showAuth('signup')">Start free trial</button>
+          <button class="btn btn-primary btn-full" onclick="startTrialSignup()">Start free trial</button>
+          <a class="subscribe-now-link" onclick="startCheckout('professional')">or subscribe now — skip the trial</a>
         </div>
       </div>
     </div>
@@ -1213,7 +1227,7 @@
 
   <div class="landing-cta-band">
     <h2>Ready to see whether your next deal stacks up?</h2>
-    <button class="btn btn-primary btn-lg" onclick="showAuth('signup')">Start free trial</button>
+    <button class="btn btn-primary btn-lg" onclick="startTrialSignup()">Start free trial</button>
   </div>
 
   <div class="landing-footer">&copy; 2026 Avalor. All rights reserved.</div>
@@ -1717,7 +1731,7 @@
           </div>
         </div>
         <div style="font-size:13px;color:var(--text-secondary)">
-          Questions about billing? Email us at <a href="mailto:hello@avalor.co.uk" style="color:var(--green)">hello@avalor.co.uk</a>
+          Questions about billing? Email us at <a href="mailto:support@avalor.co.uk" style="color:var(--green)">support@avalor.co.uk</a>
         </div>
       </div>
 
@@ -1746,7 +1760,7 @@
       <div class="card">
         <div class="account-section-title">Support</div>
         <div style="font-size:14px;color:var(--text-secondary);margin-bottom:1rem">Having issues or questions? We're here to help.</div>
-        <a href="mailto:hello@avalor.co.uk" class="btn btn-sm"><i class="ti ti-mail"></i>Email support</a>
+        <a href="mailto:support@avalor.co.uk" class="btn btn-sm"><i class="ti ti-mail"></i>Email support</a>
       </div>
 
       <div style="margin-top:1.5rem;text-align:right">

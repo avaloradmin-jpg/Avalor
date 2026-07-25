@@ -33,6 +33,58 @@ function showLanding() {
   document.getElementById('landing').style.display = 'block';
 }
 
+// ─── SUBSCRIBE NOW (skip trial) ─────────────────────────────────────────────
+// Lets a decisive landing-page visitor pay upfront instead of starting a
+// trial. There's no way to attach a Stripe subscription to an account that
+// doesn't exist yet (the webhook needs a userId to write the plan to), so
+// this still goes through account creation — it just records which plan was
+// picked and redirects straight to Stripe checkout once the account exists,
+// instead of opening the trial app. The pending plan is stashed in
+// localStorage (not a plain variable) so it survives the email-confirmation
+// round trip, and expires after 30 minutes so an abandoned attempt can never
+// hijack an unrelated later login into an unexpected checkout redirect.
+
+const PENDING_CHECKOUT_KEY = 'avalor_pending_checkout_plan';
+const PENDING_CHECKOUT_TTL_MS = 30 * 60 * 1000;
+
+function clearPendingCheckoutPlan() {
+  localStorage.removeItem(PENDING_CHECKOUT_KEY);
+}
+
+function startCheckout(plan) {
+  localStorage.setItem(PENDING_CHECKOUT_KEY, JSON.stringify({ plan, ts: Date.now() }));
+  showAuth('signup');
+}
+
+// Entry points for plain (non-checkout) sign-in/sign-up intent — clears any
+// stale pending plan from an abandoned "subscribe now" attempt so it can't
+// carry over into this unrelated sign-in.
+function startTrialSignup() {
+  clearPendingCheckoutPlan();
+  showAuth('signup');
+}
+
+function startSignIn() {
+  clearPendingCheckoutPlan();
+  showAuth('login');
+}
+
+// One-shot read: always clears the stored value, whether or not it was valid,
+// so a single pending plan is never applied twice.
+function consumePendingCheckoutPlan() {
+  const raw = localStorage.getItem(PENDING_CHECKOUT_KEY);
+  clearPendingCheckoutPlan();
+  if (!raw) return null;
+
+  try {
+    const { plan, ts } = JSON.parse(raw);
+    if (!plan || !ts || Date.now() - ts > PENDING_CHECKOUT_TTL_MS) return null;
+    return plan;
+  } catch (_) {
+    return null;
+  }
+}
+
 function hideInitialLoader() {
   const loader = document.getElementById('initial-loader');
   if (loader) loader.style.display = 'none';
@@ -176,6 +228,19 @@ async function init() {
         }).eq('id', session.user.id);
       }
 
+      // "Subscribe now" from the landing page — skip the trial app entirely
+      // and go straight to Stripe checkout for the plan they picked.
+      const pendingPlan = consumePendingCheckoutPlan();
+      if (pendingPlan) {
+        try {
+          await redirectToCheckout(pendingPlan, session.user.id, session.user.email);
+        } catch (err) {
+          toast('Something went wrong starting checkout — please try again from your account page.', 'error');
+          launchApp();
+        }
+        return;
+      }
+
       launchApp();
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
@@ -304,6 +369,23 @@ function closeUpgradeOutside(e) {
   if (e.target === document.getElementById('upgrade-modal')) closeUpgrade();
 }
 
+// Shared by choosePlan (existing-user upgrade modal / trial-expired screen)
+// and the post-signup "subscribe now" redirect below — neither depends on a
+// specific button element existing in the DOM.
+async function redirectToCheckout(plan, userId, email) {
+  const res = await fetch('/api/stripe/create-checkout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan, userId, email }),
+  });
+  const data = await res.json();
+  if (data.url) {
+    window.location.href = data.url;
+  } else {
+    throw new Error(data.error || 'No checkout URL returned');
+  }
+}
+
 async function choosePlan(plan, btnEl) {
   if (!currentUser) return;
 
@@ -313,17 +395,7 @@ async function choosePlan(plan, btnEl) {
   btn.textContent = 'Redirecting…';
 
   try {
-    const res = await fetch('/api/stripe/create-checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan, userId: currentUser.id, email: currentUser.email }),
-    });
-    const data = await res.json();
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      throw new Error(data.error || 'No checkout URL returned');
-    }
+    await redirectToCheckout(plan, currentUser.id, currentUser.email);
   } catch (err) {
     toast('Something went wrong. Please try again.');
     btn.disabled = false;
