@@ -1,14 +1,28 @@
 // Avalor — Appraisal calculation engine
 
-// BCIS Q1 2026 benchmark rates, £/m², ex-VAT — excludes professional fees and contingency
+// BCIS Q1 2026 benchmark rates, £/m², ex-VAT, UK national average — excludes
+// professional fees and contingency. Adjusted per-appraisal by REGION_BUILD_MULTIPLIER.
 const BCIS = {
-  'Loft conversion':          { low: 1500, mid: 1900, high: 2500 },
-  'Flat conversion':          { low: 1500, mid: 2000, high: 2800 },
-  'HMO conversion':           { low: 1500, mid: 1900, high: 2500 },
-  'Cosmetic refurbishment':   { low: 200,  mid: 400,  high: 700  },
-  'Light refurbishment':      { low: 800,  mid: 1100, high: 1500 },
-  'Full refurbishment':       { low: 1500, mid: 1800, high: 2500 },
-  'New build':                { low: 1800, mid: 2400, high: 3200 }
+  'Loft conversion':          { low: 1150, mid: 1450, high: 1900 },
+  'Flat conversion':          { low: 1150, mid: 1550, high: 2150 },
+  'HMO conversion':           { low: 1150, mid: 1450, high: 1900 },
+  'Cosmetic refurbishment':   { low: 150,  mid: 300,  high: 550  },
+  'Light refurbishment':      { low: 600,  mid: 850,  high: 1150 },
+  'Full refurbishment':       { low: 1150, mid: 1400, high: 1900 },
+  'New build':                { low: 1400, mid: 1850, high: 2450 }
+};
+
+// Regional build cost multiplier vs UK national average (1.00) — labour, access
+// and materials delivery all cost more in London and the South East than in
+// the North or Midlands.
+const REGION_BUILD_MULTIPLIER = {
+  'London':     1.30,
+  'South East': 1.15,
+  'South West': 1.00,
+  'Yorkshire':  0.92,
+  'Midlands':   0.90,
+  'North West': 0.90,
+  'North East': 0.85
 };
 
 // GDV multiplier — how the end-product type is expected to sell relative to
@@ -463,8 +477,13 @@ function renderBuildCostExplainer(a) {
   const el = document.getElementById('build-calc-body');
   if (!el) return;
 
+  const regionLine = a.regionMultiplier !== 1
+    ? `<div><strong>Region adjustment:</strong> £${a.bcisNational.mid.toLocaleString('en-GB')}/m² national average × ${a.regionMultiplier.toFixed(2)} (${escapeHtml(a.region)}) = £${a.bcis.mid.toLocaleString('en-GB')}/m²</div>`
+    : `<div><strong>Region adjustment:</strong> None — ${escapeHtml(a.region)} is at the UK national average</div>`;
+
   el.innerHTML = `
-    <div><strong>Data source:</strong> BCIS Q1 2026 benchmark rates, £/m², ex-VAT</div>
+    <div><strong>Data source:</strong> BCIS Q1 2026 benchmark rates, £/m², ex-VAT, UK national average</div>
+    ${regionLine}
     <div><strong>Rate used:</strong> £${a.bcis.mid.toLocaleString('en-GB')}/m² (mid) × ${a.area}m² = ${fmt(a.buildMid)}</div>
     <div><strong>Range:</strong> £${a.bcis.low.toLocaleString('en-GB')} – £${a.bcis.high.toLocaleString('en-GB')}/m² for ${escapeHtml(a.devType)}</div>
     <div>Excludes professional fees and contingency — these are costed separately.</div>
@@ -679,7 +698,13 @@ async function runAppraisal() {
   btn.innerHTML = '<span class="loading-spinner"></span> Running…';
   btn.disabled = true;
 
-  const bcis = BCIS[devType] || BCIS['Flat conversion'];
+  const bcisNational = BCIS[devType] || BCIS['Flat conversion'];
+  const regionMultiplier = REGION_BUILD_MULTIPLIER[region] || 1.00;
+  const bcis = {
+    low:  Math.round(bcisNational.low  * regionMultiplier),
+    mid:  Math.round(bcisNational.mid  * regionMultiplier),
+    high: Math.round(bcisNational.high * regionMultiplier)
+  };
   const fallbackPpm = PRICE_PER_SQM_FALLBACK[region] || 4200;
   const fallbackGrowth = PRICE_GROWTH_FALLBACK[region] || 6.0;
 
@@ -841,6 +866,16 @@ async function runAppraisal() {
 
   document.getElementById('r-build-note').textContent = `£${bcis.mid.toLocaleString('en-GB')}/m² × ${area}m² = ${fmt(buildMid)}`;
 
+  const regionNoteEl = document.getElementById('r-build-region-note');
+  if (regionNoteEl) {
+    if (regionMultiplier !== 1) {
+      const pct = Math.round((regionMultiplier - 1) * 100);
+      regionNoteEl.textContent = `Adjusted for ${region} build costs (${pct > 0 ? '+' : ''}${pct}% vs UK national average).`;
+    } else {
+      regionNoteEl.textContent = '';
+    }
+  }
+
   const gdvBasisLabel = usedFallback ? 'regional avg' : 'median';
   document.getElementById('r-gdv-note').textContent = `${fmt(medianPrice)} ${gdvBasisLabel} × ${units} unit${units === 1 ? '' : 's'} × ${gdvMultiplier.toFixed(2)} = ${fmt(gdv)}`;
 
@@ -849,7 +884,7 @@ async function runAppraisal() {
     compCount: last12.length, propTypeFilteredCount, gdvMultiplier
   });
 
-  renderBuildCostExplainer({ bcis, area, buildMid, devType });
+  renderBuildCostExplainer({ bcis, bcisNational, regionMultiplier, region, area, buildMid, devType });
 
   document.getElementById('r-sdlt-note').textContent = getSdltNote(sdlt, purchase);
 

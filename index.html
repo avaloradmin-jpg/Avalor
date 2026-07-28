@@ -865,6 +865,10 @@
     .account-section { margin-bottom: 2rem; }
     .account-section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 1rem; }
 
+    /* METHODOLOGY PAGE */
+    .methodology-body p { font-size: 14px; color: var(--text-secondary); line-height: 1.65; margin-bottom: 0.85rem; }
+    .methodology-body p:last-child { margin-bottom: 0; }
+
     /* PRO LOCK */
     .pro-lock {
       text-align: center;
@@ -1499,6 +1503,7 @@
                 <div class="metric-tile-label">Total build cost</div>
                 <div class="metric-tile-value" id="r-build">—</div>
                 <div class="metric-tile-sub" id="r-build-note"></div>
+                <div class="metric-tile-sub" id="r-build-region-note"></div>
                 <details class="calc-detail">
                   <summary>How is this calculated?</summary>
                   <div class="calc-detail-body" id="build-calc-body"></div>
@@ -1763,10 +1768,77 @@
         <a href="mailto:support@avalor.co.uk" class="btn btn-sm"><i class="ti ti-mail"></i>Email support</a>
       </div>
 
+      <div class="card" style="margin-bottom:1.5rem;margin-top:1.5rem">
+        <div class="account-section-title">How the numbers work</div>
+        <div style="font-size:14px;color:var(--text-secondary);margin-bottom:1rem">A plain-English guide to the data and calculations behind every appraisal.</div>
+        <button class="btn btn-sm" onclick="showPage('methodology')"><i class="ti ti-book"></i>View methodology</button>
+      </div>
+
       <div style="margin-top:1.5rem;text-align:right">
         <button class="btn btn-sm" onclick="handleLogout()" style="color:var(--text-secondary)">
           <i class="ti ti-logout"></i>Sign out
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- METHODOLOGY PAGE -->
+  <div class="page" id="page-methodology">
+    <div class="page-wrap" style="max-width:760px">
+      <div class="page-header">
+        <div>
+          <div class="page-title">How Avalor works out your numbers</div>
+          <div class="page-subtitle">A plain-English explainer, so you know exactly what's behind every figure.</div>
+        </div>
+        <button class="btn btn-sm" onclick="showPage('account', document.getElementById('tab-account'))" style="color:var(--text-secondary)">
+          <i class="ti ti-arrow-left"></i>Back to account
+        </button>
+      </div>
+
+      <div class="methodology-body">
+        <div class="card" style="margin-bottom:1.5rem">
+          <div class="account-section-title">Gross Development Value</div>
+          <p>We use HM Land Registry Price Paid data, so these are real sold prices rather than asking prices. Where there are enough recent sales of your property type nearby, we filter to those. If there aren't, we widen out to the local area and tell you we've done it.</p>
+          <p>Development type changes the figure. Conversions tend to sell slightly under comparable existing stock, because buyers know what the property used to be. New build usually sells above it, because people pay for new and for the warranty that comes with it. A refurb done properly should land around the local median.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:1.5rem">
+          <div class="account-section-title">The Avalor Score</div>
+          <p>Every appraisal gets scored out of 100 across six areas: profitability, planning risk, flood and environmental risk, construction risk, market demand and exit strategy. Profitability carries the most weight because it's the question that matters most.</p>
+          <p>A good headline score can still be hiding one weak category, which is why we show you all six rather than just the number.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:1.5rem">
+          <div class="account-section-title">Build costs</div>
+          <p>These are based on BCIS benchmarks, the same data quantity surveyors and lenders use when they're sense-checking a development finance application.</p>
+          <p>Where you build makes a real difference. Labour, access and getting materials to site all cost more in London and the South East than they do in the North or the Midlands, so we adjust for region rather than applying one national rate.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:1.5rem">
+          <div class="account-section-title">Stamp Duty</div>
+          <p>Calculated on current HMRC bands, including the additional dwelling surcharge if you already own a property. It's one of the costs people most often get wrong or forget entirely.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:1.5rem">
+          <div class="account-section-title">Development finance</div>
+          <p>An estimate of what it costs to borrow against the purchase and the build. It's a guide, not a quote. What you actually pay depends on the lender, your track record and the deal itself.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:1.5rem">
+          <div class="account-section-title">Planning, flood and conservation data</div>
+          <p>Pulled live from planning.data.gov.uk and PlanWire. Where we can, we filter planning history to your development type, so you're looking at what's been approved for schemes like yours rather than a general local average.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:1.5rem">
+          <div class="account-section-title">Comparing deals</div>
+          <p>Comparison puts two saved appraisals side by side so you can see the difference between them at a glance rather than flicking between tabs and trying to hold both sets of numbers in your head.</p>
+          <p>It shows the same figures for each deal, lined up, so the gaps stand out. What it won't do is tell you which one to buy. Two deals can score similarly and still be completely different propositions depending on your cash position, your appetite for planning risk, or how quickly you need to get out.</p>
+        </div>
+
+        <div class="card">
+          <div class="account-section-title">Where this stops</div>
+          <p>Avalor is built to help you work out quickly whether something is worth chasing. It isn't a cost plan, a RICS valuation or planning advice. Use it to sift the deals worth looking at properly, then get real quotes and proper advice before you commit to anything.</p>
+        </div>
       </div>
     </div>
   </div>
