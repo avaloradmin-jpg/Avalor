@@ -16,13 +16,13 @@ const BCIS = {
 // and materials delivery all cost more in London and the South East than in
 // the North or Midlands.
 const REGION_BUILD_MULTIPLIER = {
-  'London':     1.30,
-  'South East': 1.15,
+  'London':     1.35,
+  'South East': 1.10,
   'South West': 1.00,
-  'Yorkshire':  0.92,
-  'Midlands':   0.90,
-  'North West': 0.90,
-  'North East': 0.85
+  'Yorkshire':  0.95,
+  'Midlands':   0.95,
+  'North West': 0.96,
+  'North East': 0.90
 };
 
 // GDV multiplier — how the end-product type is expected to sell relative to
