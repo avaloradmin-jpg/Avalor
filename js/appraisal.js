@@ -1,7 +1,7 @@
 // Avalor — Appraisal calculation engine
 
 // BCIS Q1 2026 benchmark rates, £/m², ex-VAT, UK national average — excludes
-// professional fees and contingency. Adjusted per-appraisal by REGION_BUILD_MULTIPLIER.
+// professional fees and contingency. Adjusted per-appraisal by REGION_TIERS.
 const BCIS = {
   'Loft conversion':          { low: 1150, mid: 1450, high: 1900 },
   'Flat conversion':          { low: 1150, mid: 1550, high: 2150 },
@@ -12,18 +12,127 @@ const BCIS = {
   'New build':                { low: 1400, mid: 1850, high: 2450 }
 };
 
-// Regional build cost multiplier vs UK national average (1.00) — labour, access
-// and materials delivery all cost more in London and the South East than in
-// the North or Midlands.
-const REGION_BUILD_MULTIPLIER = {
-  'London':     1.35,
-  'South East': 1.10,
-  'South West': 1.00,
-  'Yorkshire':  0.95,
-  'Midlands':   0.95,
-  'North West': 0.96,
-  'North East': 0.90
+// Regional build cost tier vs UK national average (1.00) — labour, access and
+// materials delivery costs vary well below national-region level, which is why
+// London is split Inner/Outer, the South East is split Home Counties vs
+// outer/coastal, and the old combined premium cluster is split into Oxford/
+// Cambridge vs Bristol/Bath (different markets). Region is derived from the
+// postcode (see resolveRegionTier below), not chosen by the user — this is
+// also where the GDV regional fallback (ppm/growth) figures live, used when
+// Land Registry data is sparse. ppm sourced from Plumplot (London, Jun 2026),
+// Investropa (Manchester/NW metro, 2026) and ONS regional average house
+// prices (NW/Yorkshire/W Mids/E Mids/NE/Wales/national); remaining tiers
+// interpolated from those anchors. Growth rates are unchanged first-pass
+// estimates carried over from the original 7-region split.
+const REGION_TIERS = {
+  'Inner London':                        { mult: 1.35, ppm: 9500, growth: 5.8 },
+  'Outer London':                        { mult: 1.25, ppm: 6800, growth: 5.8 },
+  'South East (Home Counties)':          { mult: 1.10, ppm: 4600, growth: 6.2 },
+  'South East (outer/coastal)':          { mult: 1.05, ppm: 3900, growth: 6.2 },
+  'Oxford & Cambridge':                  { mult: 1.12, ppm: 5200, growth: 6.0 },
+  'Bristol & Bath':                      { mult: 1.05, ppm: 3900, growth: 6.0 },
+  'East of England':                     { mult: 1.02, ppm: 3800, growth: 6.0 },
+  'South West':                          { mult: 0.98, ppm: 3400, growth: 5.9 },
+  'North West (Manchester, Liverpool)':  { mult: 0.96, ppm: 3000, growth: 7.1 },
+  'Yorkshire & Humber':                  { mult: 0.95, ppm: 2700, growth: 6.5 },
+  'West Midlands':                       { mult: 0.95, ppm: 2900, growth: 6.8 },
+  'East Midlands':                       { mult: 0.94, ppm: 2850, growth: 6.8 },
+  'Wales':                               { mult: 0.92, ppm: 2600, growth: 6.5 },
+  'North West (rest)':                   { mult: 0.92, ppm: 2500, growth: 7.1 },
+  'North East':                          { mult: 0.90, ppm: 2300, growth: 5.4 }
 };
+
+// Postcode areas (E, N, NW, SE, SW, W) that straddle Inner/Outer London need
+// district-level resolution — e.g. SW1 (Chelsea, Inner) vs SW19 (Wimbledon,
+// Outer) share an area but not a tier. Outcodes below are Inner London;
+// anything else in these areas is Outer London.
+const LONDON_SPLIT_AREAS = ['E', 'N', 'NW', 'SE', 'SW', 'W'];
+const INNER_LONDON_OUTCODES = new Set([
+  'E1', 'E2', 'E3', 'E5', 'E8', 'E9', 'E14',
+  'N1', 'N4', 'N5', 'N7', 'N16', 'N19',
+  'NW1', 'NW3', 'NW5', 'NW6', 'NW8',
+  'SE1', 'SE5', 'SE8', 'SE11', 'SE14', 'SE15', 'SE16', 'SE17', 'SE24',
+  'SW1', 'SW2', 'SW3', 'SW4', 'SW5', 'SW6', 'SW7', 'SW8', 'SW9', 'SW10', 'SW11', 'SW12',
+  'W1', 'W2', 'W6', 'W8', 'W9', 'W10', 'W11', 'W12', 'W14'
+]);
+// Whole postcode areas that sit entirely inside Greater London (no district
+// split needed) — EC/WC are Inner, the rest are the outer-borough areas.
+const INNER_LONDON_WHOLE_AREAS = new Set(['EC', 'WC']);
+const OUTER_LONDON_WHOLE_AREAS = new Set(['BR', 'CR', 'DA', 'EN', 'HA', 'IG', 'KT', 'RM', 'SM', 'TW', 'UB']);
+
+// Non-London postcode areas only need area-level (not district-level)
+// resolution, since these tiers are city/county-scale distinctions.
+const AREA_TO_TIER = {
+  OX: 'Oxford & Cambridge', CB: 'Oxford & Cambridge',
+  BS: 'Bristol & Bath', BA: 'Bristol & Bath',
+
+  GU: 'South East (Home Counties)', RH: 'South East (Home Counties)', SL: 'South East (Home Counties)',
+  RG: 'South East (Home Counties)', HP: 'South East (Home Counties)', AL: 'South East (Home Counties)',
+  SG: 'South East (Home Counties)', LU: 'South East (Home Counties)', WD: 'South East (Home Counties)',
+  MK: 'South East (Home Counties)',
+
+  BN: 'South East (outer/coastal)', TN: 'South East (outer/coastal)', ME: 'South East (outer/coastal)',
+  CT: 'South East (outer/coastal)', PO: 'South East (outer/coastal)', SO: 'South East (outer/coastal)',
+
+  CM: 'East of England', CO: 'East of England', IP: 'East of England', NR: 'East of England',
+  PE: 'East of England', SS: 'East of England',
+
+  EX: 'South West', PL: 'South West', TR: 'South West', TQ: 'South West', DT: 'South West',
+  TA: 'South West', SN: 'South West', SP: 'South West', GL: 'South West', BH: 'South West',
+
+  M: 'North West (Manchester, Liverpool)', L: 'North West (Manchester, Liverpool)',
+  SK: 'North West (Manchester, Liverpool)', WA: 'North West (Manchester, Liverpool)',
+  BL: 'North West (Manchester, Liverpool)', OL: 'North West (Manchester, Liverpool)',
+  WN: 'North West (Manchester, Liverpool)',
+
+  CH: 'North West (rest)', CW: 'North West (rest)', CA: 'North West (rest)', LA: 'North West (rest)',
+  PR: 'North West (rest)', FY: 'North West (rest)', BB: 'North West (rest)',
+
+  LS: 'Yorkshire & Humber', S: 'Yorkshire & Humber', HD: 'Yorkshire & Humber', HX: 'Yorkshire & Humber',
+  BD: 'Yorkshire & Humber', YO: 'Yorkshire & Humber', HU: 'Yorkshire & Humber', WF: 'Yorkshire & Humber',
+  DN: 'Yorkshire & Humber', HG: 'Yorkshire & Humber',
+
+  B: 'West Midlands', CV: 'West Midlands', WV: 'West Midlands', WS: 'West Midlands', DY: 'West Midlands',
+  ST: 'West Midlands', TF: 'West Midlands', SY: 'West Midlands', WR: 'West Midlands', HR: 'West Midlands',
+
+  NG: 'East Midlands', LE: 'East Midlands', DE: 'East Midlands', NN: 'East Midlands', LN: 'East Midlands',
+
+  CF: 'Wales', SA: 'Wales', NP: 'Wales', LD: 'Wales', LL: 'Wales',
+
+  NE: 'North East', SR: 'North East', DH: 'North East', DL: 'North East', TS: 'North East'
+};
+
+// Postcodes outside the tiers above (Scotland, Northern Ireland, Channel
+// Islands, Isle of Man, or anything unparseable) fall back to the UK national
+// average rather than guessing — `matched: false` lets the UI flag this
+// explicitly rather than silently applying a wrong region.
+function resolveRegionTier(postcode) {
+  const pcClean = (postcode || '').replace(/\s+/g, '').toUpperCase();
+  const outcode = pcClean.length >= 5 ? pcClean.slice(0, -3) : '';
+  const areaMatch = outcode.match(/^[A-Z]+/);
+  const area = areaMatch ? areaMatch[0] : '';
+  // Central London districts often carry a trailing sub-district letter
+  // (SW1A, W1A, NW1W, N1C) — strip it so lookups match on area+number only.
+  const districtMatch = outcode.match(/^([A-Z]+)(\d+)/);
+  const district = districtMatch ? districtMatch[1] + districtMatch[2] : outcode;
+
+  let tierName = null;
+  if (area && LONDON_SPLIT_AREAS.includes(area)) {
+    tierName = INNER_LONDON_OUTCODES.has(district) ? 'Inner London' : 'Outer London';
+  } else if (area && INNER_LONDON_WHOLE_AREAS.has(area)) {
+    tierName = 'Inner London';
+  } else if (area && OUTER_LONDON_WHOLE_AREAS.has(area)) {
+    tierName = 'Outer London';
+  } else if (area && AREA_TO_TIER[area]) {
+    tierName = AREA_TO_TIER[area];
+  }
+
+  if (!tierName) {
+    return { name: 'Unmatched postcode', mult: 1.00, ppm: 4200, growth: 6.0, matched: false };
+  }
+  const tier = REGION_TIERS[tierName];
+  return { name: tierName, mult: tier.mult, ppm: tier.ppm, growth: tier.growth, matched: true };
+}
 
 // GDV multiplier — how the end-product type is expected to sell relative to
 // the raw district median. Conversions produce lower-value stock, a good
@@ -66,27 +175,6 @@ function updateUnitsVisibility() {
   }
 }
 updateUnitsVisibility();
-
-// Regional fallback prices (£/sqm) — used when Land Registry returns < 5 comps
-const PRICE_PER_SQM_FALLBACK = {
-  'London':     6500,
-  'South East': 4200,
-  'South West': 3600,
-  'Midlands':   2800,
-  'North West': 2600,
-  'North East': 2200,
-  'Yorkshire':  2500
-};
-
-const PRICE_GROWTH_FALLBACK = {
-  'London':     5.8,
-  'South East': 6.2,
-  'South West': 5.9,
-  'Midlands':   6.8,
-  'North West': 7.1,
-  'North East': 5.4,
-  'Yorkshire':  6.5
-};
 
 // End-product property type for each dev type — used to filter comps.
 // Conversions always produce flats regardless of what "Property type" the
@@ -477,7 +565,9 @@ function renderBuildCostExplainer(a) {
   const el = document.getElementById('build-calc-body');
   if (!el) return;
 
-  const regionLine = a.regionMultiplier !== 1
+  const regionLine = !a.regionMatched
+    ? `<div><strong>Region adjustment:</strong> None — postcode is outside our mapped UK regions (e.g. Scotland, Northern Ireland), so the UK national average rate is used</div>`
+    : a.regionMultiplier !== 1
     ? `<div><strong>Region adjustment:</strong> £${a.bcisNational.mid.toLocaleString('en-GB')}/m² national average × ${a.regionMultiplier.toFixed(2)} (${escapeHtml(a.region)}) = £${a.bcis.mid.toLocaleString('en-GB')}/m²</div>`
     : `<div><strong>Region adjustment:</strong> None — ${escapeHtml(a.region)} is at the UK national average</div>`;
 
@@ -682,7 +772,6 @@ async function runAppraisal() {
   const postcode = document.getElementById('postcode').value.trim().toUpperCase();
   const devType = document.getElementById('dev-type').value;
   const propType = document.getElementById('prop-type').value;
-  const region = document.getElementById('region').value;
   const purchase = parseFloat(document.getElementById('purchase').value) || 320000;
   const area = parseFloat(document.getElementById('floorarea').value) || 110;
   const units = MULTI_UNIT_DEV_TYPES.includes(devType)
@@ -698,15 +787,17 @@ async function runAppraisal() {
   btn.innerHTML = '<span class="loading-spinner"></span> Running…';
   btn.disabled = true;
 
+  const regionTier = resolveRegionTier(postcode);
+  const region = regionTier.name;
+  const regionMultiplier = regionTier.mult;
   const bcisNational = BCIS[devType] || BCIS['Flat conversion'];
-  const regionMultiplier = REGION_BUILD_MULTIPLIER[region] || 1.00;
   const bcis = {
     low:  Math.round(bcisNational.low  * regionMultiplier),
     mid:  Math.round(bcisNational.mid  * regionMultiplier),
     high: Math.round(bcisNational.high * regionMultiplier)
   };
-  const fallbackPpm = PRICE_PER_SQM_FALLBACK[region] || 4200;
-  const fallbackGrowth = PRICE_GROWTH_FALLBACK[region] || 6.0;
+  const fallbackPpm = regionTier.ppm;
+  const fallbackGrowth = regionTier.growth;
 
   let comps = [];
   let allComps = [];
@@ -868,11 +959,15 @@ async function runAppraisal() {
 
   const regionNoteEl = document.getElementById('r-build-region-note');
   if (regionNoteEl) {
-    if (regionMultiplier !== 1) {
-      const pct = Math.round((regionMultiplier - 1) * 100);
-      regionNoteEl.textContent = `Adjusted for ${region} build costs (${pct > 0 ? '+' : ''}${pct}% vs UK national average).`;
+    if (!regionTier.matched) {
+      regionNoteEl.textContent = `Postcode outside our mapped UK regions (e.g. Scotland, Northern Ireland) — UK national average build cost applied instead.`;
+      regionNoteEl.classList.add('warn');
     } else {
-      regionNoteEl.textContent = '';
+      regionNoteEl.classList.remove('warn');
+      const pct = Math.round((regionMultiplier - 1) * 100);
+      regionNoteEl.textContent = pct !== 0
+        ? `Adjusted for ${region} build costs (${pct > 0 ? '+' : ''}${pct}% vs UK national average).`
+        : '';
     }
   }
 
@@ -884,7 +979,7 @@ async function runAppraisal() {
     compCount: last12.length, propTypeFilteredCount, gdvMultiplier
   });
 
-  renderBuildCostExplainer({ bcis, bcisNational, regionMultiplier, region, area, buildMid, devType });
+  renderBuildCostExplainer({ bcis, bcisNational, regionMultiplier, region, regionMatched: regionTier.matched, area, buildMid, devType });
 
   document.getElementById('r-sdlt-note').textContent = getSdltNote(sdlt, purchase);
 
