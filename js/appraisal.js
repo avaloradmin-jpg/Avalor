@@ -102,6 +102,33 @@ const AREA_TO_TIER = {
   NE: 'North East', SR: 'North East', DH: 'North East', DL: 'North East', TS: 'North East'
 };
 
+// UK postcodes always have a 3-character inward code (digit + 2 letters) at
+// the end, regardless of where the user puts (or omits) the space — so
+// normalising means stripping all whitespace, uppercasing, then reinserting
+// the space 3 characters from the end. Users shouldn't need to type the
+// space correctly for lookups to work. Returns null for input that can't be
+// a valid UK postcode (wrong length, or outward/inward shape doesn't match) —
+// deliberately excludes the historical "GIR 0AA" format, which none of the
+// live data sources resolve anything useful for anyway.
+function normalizePostcode(raw) {
+  const clean = (raw || '').replace(/\s+/g, '').toUpperCase();
+  if (clean.length < 5 || clean.length > 7) return null;
+  const inward = clean.slice(-3);
+  const outward = clean.slice(0, -3);
+  if (!/^[0-9][A-Z]{2}$/.test(inward)) return null;
+  if (!/^[A-Z]{1,2}[0-9][A-Z0-9]?$/.test(outward)) return null;
+  return outward + ' ' + inward;
+}
+
+// Outward code (postcode area + district, e.g. "BR1" from "BR1 2EQ") derived
+// directly from the postcode string rather than split(' ')[0], so it still
+// works if the input isn't already in normalised "space in the right place"
+// form.
+function postcodeOutward(postcode) {
+  const clean = (postcode || '').replace(/\s+/g, '').toUpperCase();
+  return clean.length > 3 ? clean.slice(0, -3) : clean;
+}
+
 // Postcodes outside the tiers above (Scotland, Northern Ireland, Channel
 // Islands, Isle of Man, or anything unparseable) fall back to the UK national
 // average rather than guessing — `matched: false` lets the UI flag this
@@ -270,8 +297,10 @@ function epcScoreToBand(score) {
 }
 
 async function resolveHomedataAddresses(postcode) {
-  const pcClean = postcode.replace(/\s+/g, '').toUpperCase();
-  const resp = await authedFetch(`${HOMEDATA_PROXY}?path=${encodeURIComponent('address/postcode/' + pcClean + '/')}`, {
+  // postcode arrives pre-normalised (space in the correct place) from
+  // normalizePostcode() — don't strip it, Homedata's address index expects
+  // the canonical "AB1 2CD" form and returns incomplete results without it.
+  const resp = await authedFetch(`${HOMEDATA_PROXY}?path=${encodeURIComponent('address/postcode/' + postcode + '/')}`, {
     signal: AbortSignal.timeout(6000)
   });
   if (!resp.ok) throw new Error('Homedata postcode lookup failed: ' + resp.status);
@@ -538,7 +567,7 @@ function renderGdvExplainer(a) {
   const el = document.getElementById('gdv-calc-body');
   if (!el) return;
 
-  const areaLabel = a.district || a.postcode.split(' ')[0];
+  const areaLabel = a.district || postcodeOutward(a.postcode);
   const multiplierLine = `×${a.gdvMultiplier.toFixed(2)} — ${GDV_MULTIPLIER_REASON[a.devType]}`;
 
   let sourceLine, compsLine;
@@ -769,7 +798,7 @@ async function runAppraisal() {
     return;
   }
 
-  const postcode = document.getElementById('postcode').value.trim().toUpperCase();
+  const postcodeRaw = document.getElementById('postcode').value.trim();
   const devType = document.getElementById('dev-type').value;
   const propType = document.getElementById('prop-type').value;
   const purchase = parseFloat(document.getElementById('purchase').value) || 320000;
@@ -778,8 +807,17 @@ async function runAppraisal() {
     ? (parseInt(document.getElementById('units').value) || 2)
     : 1;
 
-  if (!postcode) {
+  if (!postcodeRaw) {
     toast('Please enter a postcode', 'error');
+    return;
+  }
+
+  // Normalise once, here, before any lookup fires — everything downstream
+  // (Land Registry, postcodes.io, Homedata, region tier resolution, storage
+  // and display) works off this single canonically-formatted value.
+  const postcode = normalizePostcode(postcodeRaw);
+  if (!postcode) {
+    toast('Please enter a valid UK postcode', 'error');
     return;
   }
 
@@ -884,7 +922,7 @@ async function runAppraisal() {
   // Require at least 5 comps in the last 12 months to trust the data
   if (!usedFallback && last12.length < 5) {
     usedFallback = true;
-    const label = district || postcode.split(' ')[0];
+    const label = district || postcodeOutward(postcode);
     fallbackReason = `Only ${last12.length} sold comparable${last12.length === 1 ? '' : 's'} found in ${label} for the last 12 months. GDV and area statistics are based on regional averages, not live market data.`;
   }
 
@@ -1210,7 +1248,7 @@ function setRiskNote(id, cls, text) {
 }
 
 function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback, epcResult, floodZone, planwireResult, conservationArea) {
-  const areaLabel = district || postcode.split(' ')[0];
+  const areaLabel = district || postcodeOutward(postcode);
   document.getElementById('snapshot-postcode').textContent = areaLabel;
 
   // Metrics tiles
@@ -1477,7 +1515,7 @@ function computeMissedItems(a) {
 
   // Property type filter fell back to the unfiltered district median
   if (a.usedPropTypeFallback) {
-    const areaLabel = a.district || a.postcode.split(' ')[0];
+    const areaLabel = a.district || postcodeOutward(a.postcode);
     const propLabel = a.propType.toLowerCase();
     items.push({
       severity: 'warn',
