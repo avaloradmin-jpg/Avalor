@@ -21,6 +21,9 @@ const HOMEDATA_BASE = 'api.homedata.co.uk';
 const PLANWIRE_KEY = ENV.PLANWIRE_API_KEY || '';
 const PLANWIRE_BASE = 'api.planwire.io';
 
+const EPC_API_TOKEN = ENV.EPC_API_TOKEN || '';
+const EPC_BASE = 'api.get-energy-performance-data.communities.gov.uk';
+
 const SUPABASE_URL = 'jjegxgveeowrrgnfvaxn.supabase.co';
 const SUPABASE_SERVICE_KEY = ENV.SUPABASE_SERVICE_KEY || '';
 // Public anon/publishable key — matches js/supabase.js. Safe to embed; paired
@@ -459,7 +462,7 @@ http.createServer(async (req, res) => {
   }
 
   // ── Existing proxy routes ───────────────────────────────────────────────────
-  // Both hit paid third-party APIs, so every call must be tied to a signed-in
+  // All hit metered third-party APIs, so every call must be tied to a signed-in
   // account that's either on a paid plan or still within its trial window —
   // otherwise this is an open, unmetered tap on API quota we pay for.
   if (req.url.startsWith('/api/homedata')) {
@@ -469,6 +472,10 @@ http.createServer(async (req, res) => {
   if (req.url.startsWith('/api/planwire')) {
     if (!(await requireActiveAccess(req, res))) return;
     return proxyRequest(req, res, PLANWIRE_BASE, upstreamPathFromQuery(req), { 'X-API-Key': PLANWIRE_KEY });
+  }
+  if (req.url.startsWith('/api/epc')) {
+    if (!(await requireActiveAccess(req, res))) return;
+    return proxyRequest(req, res, EPC_BASE, upstreamPathFromQuery(req), { 'Authorization': `Bearer ${EPC_API_TOKEN}` });
   }
 
   // ── Public shared-deal lookup (mirrors api/shared-deal.js) ──────────────────

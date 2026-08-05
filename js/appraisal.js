@@ -285,17 +285,6 @@ async function authedFetch(url, opts = {}) {
   return resp;
 }
 
-function epcScoreToBand(score) {
-  if (score == null) return null;
-  if (score >= 92) return 'A';
-  if (score >= 81) return 'B';
-  if (score >= 69) return 'C';
-  if (score >= 55) return 'D';
-  if (score >= 39) return 'E';
-  if (score >= 21) return 'F';
-  return 'G';
-}
-
 async function resolveHomedataAddresses(postcode) {
   // postcode arrives pre-normalised (space in the correct place) from
   // normalizePostcode() — don't strip it, Homedata's address index expects
@@ -310,21 +299,39 @@ async function resolveHomedataAddresses(postcode) {
   return addresses;
 }
 
-async function fetchEpcData(addresses) {
-  // Try up to 5 UPRNs — not every property has a lodged EPC
-  for (const addr of addresses.slice(0, 5)) {
-    const uprn = addr.uprn;
-    if (!uprn) continue;
-    const resp = await authedFetch(`${HOMEDATA_PROXY}?path=${encodeURIComponent('epc-checker/' + uprn + '/')}`, {
-      signal: AbortSignal.timeout(5000)
-    });
-    if (!resp.ok) continue;
-    const data = await resp.json();
-    const score = data.current_energy_efficiency ?? null;
-    if (score == null) continue;
-    return { band: epcScoreToBand(score), score };
+const EPC_PROXY = '/api/epc';
+
+// GOV.UK "Get energy performance of buildings data" API. The search endpoint
+// only returns a summary (band + registration date) per certificate — floor
+// area and potential band require a second call to the certificate-detail
+// endpoint for whichever certificate we pick.
+async function fetchEpcData(postcode) {
+  const searchUrl = `${EPC_PROXY}?path=${encodeURIComponent('api/domestic/search')}&postcode=${encodeURIComponent(postcode)}`;
+  const searchResp = await authedFetch(searchUrl, { signal: AbortSignal.timeout(6000) });
+  if (!searchResp.ok) throw new Error('EPC search failed: ' + searchResp.status);
+  const certificates = (await searchResp.json()).data;
+  if (!Array.isArray(certificates) || !certificates.length) {
+    throw new Error('No EPC data found for properties in this postcode');
   }
-  throw new Error('No EPC data found for properties in this postcode');
+
+  // Most recent certificate for the postcode — there's no address field to
+  // match against the specific property being appraised (see the "sample
+  // property, not confirmed" caveat surfaced in the UI for this).
+  const mostRecent = certificates.reduce((latest, cert) =>
+    new Date(cert.registrationDate) > new Date(latest.registrationDate) ? cert : latest
+  );
+
+  const detailUrl = `${EPC_PROXY}?path=${encodeURIComponent('api/certificate')}&certificate_number=${encodeURIComponent(mostRecent.certificateNumber)}`;
+  const detailResp = await authedFetch(detailUrl, { signal: AbortSignal.timeout(6000) });
+  if (!detailResp.ok) throw new Error('EPC certificate lookup failed: ' + detailResp.status);
+  const detail = (await detailResp.json()).data;
+
+  return {
+    band: detail.current_energy_efficiency_band ?? null,
+    potentialBand: detail.potential_energy_efficiency_band ?? null,
+    floorArea: detail.total_floor_area ?? null,
+    lodgementDate: detail.registration_date ?? null
+  };
 }
 
 const PLANWIRE_PROXY = '/api/planwire';
@@ -851,10 +858,12 @@ async function runAppraisal() {
   let conservationArea = null;
   let devTypePlanningIntel = null;
 
-  // Land Registry and Homedata address lookup run in parallel
-  const [lrOutcome, addrOutcome] = await Promise.allSettled([
+  // Land Registry, the Homedata address lookup, and EPC all fire in parallel —
+  // EPC only needs the postcode now, not the Homedata address list
+  const [lrOutcome, addrOutcome, epcOutcome] = await Promise.allSettled([
     fetchLandRegistryComps(postcode, devType, propType),
-    resolveHomedataAddresses(postcode)
+    resolveHomedataAddresses(postcode),
+    fetchEpcData(postcode)
   ]);
 
   if (lrOutcome.status === 'fulfilled') {
@@ -867,12 +876,11 @@ async function runAppraisal() {
     fallbackReason = 'The Land Registry API could not be reached. GDV and area statistics are based on regional averages, not live market data.';
   }
 
-  // EPC, flood, and PlanWire all fire in parallel
-  const addresses = addrOutcome.status === 'fulfilled' ? addrOutcome.value : [];
+  // Flood, PlanWire, conservation area and dev-type planning intel all need
+  // Land Registry's coordinates, so they fire in a second parallel batch
   const lrCoords = lrOutcome.status === 'fulfilled' ? lrOutcome.value : null;
 
-  const [epcOutcome, floodOutcome, planwireOutcome, conservationOutcome, devTypePlanningOutcome] = await Promise.allSettled([
-    addresses.length ? fetchEpcData(addresses) : Promise.reject('No addresses'),
+  const [floodOutcome, planwireOutcome, conservationOutcome, devTypePlanningOutcome] = await Promise.allSettled([
     lrCoords ? fetchFloodRisk(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
     lrCoords ? fetchPlanwireData(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
     lrCoords ? fetchConservationArea(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
@@ -1269,12 +1277,16 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
   if (epcEl) {
     if (epcResult && epcResult.band) {
       const band = epcResult.band.toUpperCase();
-      const score = epcResult.score ? ` (${epcResult.score})` : '';
+      const potential = epcResult.potentialBand ? `, potential ${epcResult.potentialBand.toUpperCase()}` : '';
+      const area = epcResult.floorArea ? `, ${epcResult.floorArea}m²` : '';
+      const lodged = epcResult.lodgementDate
+        ? `, lodged ${new Date(epcResult.lodgementDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+        : '';
       const cls = 'AB'.includes(band) ? 'flag flag-safe'
                 : 'CD'.includes(band) ? 'flag flag-warn'
                 : 'flag flag-risk';
       epcEl.className = cls;
-      epcEl.textContent = `${band}${score} — sample property`;
+      epcEl.textContent = `${band}${potential}${area}${lodged} — sample property`;
     } else {
       epcEl.className = 'flag flag-warn';
       epcEl.textContent = 'Not available';
