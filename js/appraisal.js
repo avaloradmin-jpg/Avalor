@@ -258,10 +258,9 @@ const DEV_TYPE_KEYWORDS = {
 
 const PPD_API = 'https://landregistry.data.gov.uk/data/ppi/transaction-record.json';
 const POSTCODES_API = 'https://api.postcodes.io/postcodes/';
-const HOMEDATA_PROXY = '/api/homedata';
 
 // Attaches the caller's own Supabase access token to requests against our paid
-// Homedata/PlanWire proxies, which the server uses to check plan/trial status
+// EPC/PlanWire proxies, which the server uses to check plan/trial status
 // (see requireActiveAccess in serve.js). A 403 with { error: 'trial_expired' }
 // is surfaced as a distinguishable error so runAppraisal() can show the
 // trial-ended screen instead of a generic fetch-failed message.
@@ -283,20 +282,6 @@ async function authedFetch(url, opts = {}) {
   }
 
   return resp;
-}
-
-async function resolveHomedataAddresses(postcode) {
-  // postcode arrives pre-normalised (space in the correct place) from
-  // normalizePostcode() — don't strip it, Homedata's address index expects
-  // the canonical "AB1 2CD" form and returns incomplete results without it.
-  const resp = await authedFetch(`${HOMEDATA_PROXY}?path=${encodeURIComponent('address/postcode/' + postcode + '/')}`, {
-    signal: AbortSignal.timeout(6000)
-  });
-  if (!resp.ok) throw new Error('Homedata postcode lookup failed: ' + resp.status);
-  const data = await resp.json();
-  const addresses = Array.isArray(data) ? data : (data.addresses ?? data.results ?? []);
-  if (!addresses.length) throw new Error('No addresses found for postcode');
-  return addresses;
 }
 
 const EPC_PROXY = '/api/epc';
@@ -820,7 +805,7 @@ async function runAppraisal() {
   }
 
   // Normalise once, here, before any lookup fires — everything downstream
-  // (Land Registry, postcodes.io, Homedata, region tier resolution, storage
+  // (Land Registry, postcodes.io, EPC, region tier resolution, storage
   // and display) works off this single canonically-formatted value.
   const postcode = normalizePostcode(postcodeRaw);
   if (!postcode) {
@@ -858,11 +843,9 @@ async function runAppraisal() {
   let conservationArea = null;
   let devTypePlanningIntel = null;
 
-  // Land Registry, the Homedata address lookup, and EPC all fire in parallel —
-  // EPC only needs the postcode now, not the Homedata address list
-  const [lrOutcome, addrOutcome, epcOutcome] = await Promise.allSettled([
+  // Land Registry and EPC fire in parallel — EPC only needs the postcode
+  const [lrOutcome, epcOutcome] = await Promise.allSettled([
     fetchLandRegistryComps(postcode, devType, propType),
-    resolveHomedataAddresses(postcode),
     fetchEpcData(postcode)
   ]);
 
@@ -893,7 +876,7 @@ async function runAppraisal() {
   // requireActiveAccess (serve.js) will reject the proxy calls with a flagged
   // trial_expired error instead. Show the same paywall rather than a
   // degraded/broken appraisal.
-  const hitTrialWall = [addrOutcome, epcOutcome, planwireOutcome, devTypePlanningOutcome]
+  const hitTrialWall = [epcOutcome, planwireOutcome, devTypePlanningOutcome]
     .some(o => o.status === 'rejected' && o.reason && o.reason.trialExpired);
   if (hitTrialWall) {
     btn.innerHTML = 'Run appraisal';

@@ -15,9 +15,6 @@ try {
   });
 } catch (_) {}
 
-const HOMEDATA_KEY = ENV.HOMEDATA_API_KEY || '';
-const HOMEDATA_BASE = 'api.homedata.co.uk';
-
 const PLANWIRE_KEY = ENV.PLANWIRE_API_KEY || '';
 const PLANWIRE_BASE = 'api.planwire.io';
 
@@ -65,17 +62,13 @@ function proxyRequest(req, res, hostname, upstreamPath, extraHeaders) {
   req.pipe(proxy);
 }
 
-// Reconstruct the upstream path from a ?path= query param (mirrors api/homedata.js and api/planwire.js)
+// Reconstruct the upstream path from a ?path= query param (mirrors api/planwire.js and api/epc.js)
 function upstreamPathFromQuery(req) {
   const url = new URL(req.url, 'http://localhost');
   const subPath = (url.searchParams.get('path') || '').replace(/^\/+/, '');
   url.searchParams.delete('path');
   const qs = url.searchParams.toString();
   return '/' + subPath + (qs ? '?' + qs : '');
-}
-
-function proxyHomedata(req, res) {
-  proxyRequest(req, res, HOMEDATA_BASE, upstreamPathFromQuery(req), { 'Authorization': `Api-Key ${HOMEDATA_KEY}` });
 }
 
 // Collect raw request body as a Buffer (needed for Stripe webhook signature verification)
@@ -177,7 +170,7 @@ function fetchOwnStripeCustomerId(accessToken) {
 
 // Fetch the caller's own plan + trial start using their access token (anon
 // key + RLS) — same pattern as fetchOwnStripeCustomerId above. Used to gate
-// the paid Homedata/PlanWire proxies below.
+// the paid EPC/PlanWire proxies below.
 function fetchOwnPlanStatus(accessToken) {
   return new Promise((resolve, reject) => {
     const options = {
@@ -214,7 +207,7 @@ function isTrialExpired(profile) {
   return Date.now() >= trialEndMs;
 }
 
-// Gate for the paid Homedata/PlanWire proxies — requires a valid Supabase
+// Gate for the paid EPC/PlanWire proxies — requires a valid Supabase
 // access token for an account that's either on a paid plan or still inside
 // its 14-day trial window. Fails closed: any missing token, invalid token, or
 // lookup error blocks the request rather than letting it through. Returns
@@ -465,10 +458,6 @@ http.createServer(async (req, res) => {
   // All hit metered third-party APIs, so every call must be tied to a signed-in
   // account that's either on a paid plan or still within its trial window —
   // otherwise this is an open, unmetered tap on API quota we pay for.
-  if (req.url.startsWith('/api/homedata')) {
-    if (!(await requireActiveAccess(req, res))) return;
-    return proxyHomedata(req, res);
-  }
   if (req.url.startsWith('/api/planwire')) {
     if (!(await requireActiveAccess(req, res))) return;
     return proxyRequest(req, res, PLANWIRE_BASE, upstreamPathFromQuery(req), { 'X-API-Key': PLANWIRE_KEY });
