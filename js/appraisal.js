@@ -439,22 +439,30 @@ async function fetchDevTypePlanningIntel(lat, lng, devType) {
   };
 }
 
-async function fetchLandRegistryComps(postcode, devType, propType) {
-  // Step 1: resolve postcode to district
+// Resolves a postcode to its district and lat/lng in one fast call. Flood,
+// conservation, planning and Land Registry all key off this — none of them
+// need to wait on each other, only on this single lookup.
+async function fetchPostcodeData(postcode) {
   const pcClean = postcode.replace(/\s+/g, '');
-  const pcResp = await fetch(POSTCODES_API + pcClean, { signal: AbortSignal.timeout(5000) });
-  if (!pcResp.ok) throw new Error('Postcode lookup failed');
-  const pcData = await pcResp.json();
-  const district = pcData.result?.admin_district?.toUpperCase();
+  const resp = await fetch(POSTCODES_API + pcClean, { signal: AbortSignal.timeout(5000) });
+  if (!resp.ok) throw new Error('Postcode lookup failed');
+  const data = await resp.json();
+  const district = data.result?.admin_district?.toUpperCase();
   if (!district) throw new Error('Could not resolve district for ' + postcode);
+  return { district, lat: data.result.latitude, lng: data.result.longitude };
+}
 
-  // Step 2: fetch 24 months of PPD data for the district (allows YoY comparison)
+// Fetches 24 months of PPD data for the district (allows YoY comparison). The
+// Land Registry linked-data API is slow and inconsistent on larger districts,
+// so this gets a generous timeout of its own — it only feeds GDV/area stats,
+// which already degrade gracefully to the regional fallback if this fails.
+async function fetchLandRegistryComps(district, devType, propType) {
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - 24);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
 
   const url = `${PPD_API}?propertyAddress.district=${encodeURIComponent(district)}&min-transactionDate=${cutoffStr}&_pageSize=100&_sort=-transactionDate`;
-  const ppdResp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  const ppdResp = await fetch(url, { signal: AbortSignal.timeout(15000) });
   if (!ppdResp.ok) throw new Error('PPD API error ' + ppdResp.status);
   const ppdData = await ppdResp.json();
 
@@ -479,9 +487,6 @@ async function fetchLandRegistryComps(postcode, devType, propType) {
   return {
     transactions: filtered,
     allTransactions: transactions,
-    district,
-    lat: pcData.result.latitude,
-    lng: pcData.result.longitude,
     filterSource: devForcedType ? 'devType' : (propTypeFilter ? 'propType' : null)
   };
 }
@@ -843,32 +848,37 @@ async function runAppraisal() {
   let conservationArea = null;
   let devTypePlanningIntel = null;
 
-  // Land Registry and EPC fire in parallel — EPC only needs the postcode
-  const [lrOutcome, epcOutcome] = await Promise.allSettled([
-    fetchLandRegistryComps(postcode, devType, propType),
-    fetchEpcData(postcode)
+  // Postcode → district + coordinates resolves once, up front, fast. Land
+  // Registry, EPC, flood, conservation and planning intel all key off this
+  // (or off the raw postcode, for EPC) rather than off each other, so they
+  // can all fire in a single parallel batch — a slow/failed Land Registry
+  // lookup no longer blocks or blanks out the others.
+  let pc = null;
+  try {
+    pc = await fetchPostcodeData(postcode);
+    district = pc.district;
+  } catch (e) {
+    usedFallback = true;
+    fallbackReason = 'Could not resolve this postcode. GDV and area statistics are based on regional averages, not live market data.';
+  }
+
+  const [lrOutcome, epcOutcome, floodOutcome, planwireOutcome, conservationOutcome, devTypePlanningOutcome] = await Promise.allSettled([
+    pc ? fetchLandRegistryComps(pc.district, devType, propType) : Promise.reject('No district'),
+    fetchEpcData(postcode),
+    pc ? fetchFloodRisk(pc.lat, pc.lng) : Promise.reject('No coords'),
+    pc ? fetchPlanwireData(pc.lat, pc.lng) : Promise.reject('No coords'),
+    pc ? fetchConservationArea(pc.lat, pc.lng) : Promise.reject('No coords'),
+    pc ? fetchDevTypePlanningIntel(pc.lat, pc.lng, devType) : Promise.reject('No coords')
   ]);
 
   if (lrOutcome.status === 'fulfilled') {
     comps = lrOutcome.value.transactions;
     allComps = lrOutcome.value.allTransactions;
     filterSource = lrOutcome.value.filterSource;
-    district = lrOutcome.value.district;
-  } else {
+  } else if (!usedFallback) {
     usedFallback = true;
     fallbackReason = 'The Land Registry API could not be reached. GDV and area statistics are based on regional averages, not live market data.';
   }
-
-  // Flood, PlanWire, conservation area and dev-type planning intel all need
-  // Land Registry's coordinates, so they fire in a second parallel batch
-  const lrCoords = lrOutcome.status === 'fulfilled' ? lrOutcome.value : null;
-
-  const [floodOutcome, planwireOutcome, conservationOutcome, devTypePlanningOutcome] = await Promise.allSettled([
-    lrCoords ? fetchFloodRisk(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
-    lrCoords ? fetchPlanwireData(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
-    lrCoords ? fetchConservationArea(lrCoords.lat, lrCoords.lng) : Promise.reject('No coords'),
-    lrCoords ? fetchDevTypePlanningIntel(lrCoords.lat, lrCoords.lng, devType) : Promise.reject('No coords')
-  ]);
 
   // Defense in depth: the client-side gate at the top of this function should
   // catch an expired trial before any of this fires, but if the trial expired
@@ -1281,8 +1291,8 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
   if (floodEl) {
     if (floodZone === null) {
       floodEl.className = 'flag flag-warn';
-      floodEl.textContent = 'Not available';
-      setRiskNote('flag-flood-note', '', "We couldn't confirm this from Environment Agency data — check the long-term flood risk report for this postcode before proceeding.");
+      floodEl.textContent = "Couldn't check";
+      setRiskNote('flag-flood-note', '', "We weren't able to look this up against Environment Agency data — this isn't a clean result, it's a failed lookup. Check the long-term flood risk report for this postcode before proceeding.");
     } else if (floodZone === 1) {
       floodEl.className = 'flag flag-safe';
       floodEl.textContent = 'Zone 1 — low probability of flooding';
@@ -1304,10 +1314,10 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
   if (planningEl && refusalsEl) {
     if (!planwireResult) {
       planningEl.className = 'flag flag-warn';
-      planningEl.textContent = 'Not available';
+      planningEl.textContent = "Couldn't check";
       refusalsEl.className = 'flag flag-warn';
-      refusalsEl.textContent = 'Not available';
-      setRiskNote('flag-planning-note', '', "No local planning history to hand — lean on a local planning consultant's read of this authority before you rely on precedent.");
+      refusalsEl.textContent = "Couldn't check";
+      setRiskNote('flag-planning-note', '', "We weren't able to pull planning history for this site — this isn't an empty result, it's a failed lookup. Check the local authority's planning portal directly before relying on precedent.");
     } else {
       const { total, granted, refused, mostRecentRefusalYear } = planwireResult;
       if (total === 0) {
@@ -1345,8 +1355,8 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
   if (conservationEl) {
     if (conservationArea === null) {
       conservationEl.className = 'flag flag-warn';
-      conservationEl.textContent = 'Not available';
-      setRiskNote('flag-conservation-note', '', "Not confirmed — check the local authority's conservation area map before assuming either way.");
+      conservationEl.textContent = "Couldn't check";
+      setRiskNote('flag-conservation-note', '', "We weren't able to look this up — this isn't confirmation either way, it's a failed lookup. Check the local authority's conservation area map before assuming either way.");
     } else if (conservationArea) {
       conservationEl.className = 'flag flag-risk';
       conservationEl.textContent = 'Yes — additional controls apply';
@@ -1422,7 +1432,7 @@ function buildDevTypePlanningCard(result, devType) {
   if (!result) {
     metricsBox.style.display = 'none';
     refurbNote.style.display = 'block';
-    refurbNote.textContent = 'Planning application data is not available for this postcode right now.';
+    refurbNote.textContent = "We weren't able to pull planning application data for this postcode — this isn't an empty result, it's a failed lookup. Try again shortly.";
     return;
   }
 
