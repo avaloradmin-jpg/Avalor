@@ -1279,7 +1279,7 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
                 : 'CD'.includes(band) ? 'flag flag-warn'
                 : 'flag flag-risk';
       epcEl.className = cls;
-      epcEl.textContent = `${band}${potential}${area}${lodged} — sample property`;
+      epcEl.textContent = `${band}${potential}${area}${lodged} — sample property in this postcode`;
     } else {
       epcEl.className = 'flag flag-warn';
       epcEl.textContent = 'Not available';
