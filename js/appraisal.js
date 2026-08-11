@@ -259,6 +259,19 @@ const DEV_TYPE_KEYWORDS = {
 const PPD_API = 'https://landregistry.data.gov.uk/data/ppi/transaction-record.json';
 const POSTCODES_API = 'https://api.postcodes.io/postcodes/';
 
+// 200 is the server-enforced ceiling on _pageSize — requesting more doesn't
+// get you more. 20 pages (4,000 rows) is a safety valve, not a target: it
+// comfortably covers a full 12 months even for Birmingham-sized districts
+// (measured live), so it should only ever bind on freakishly high-volume
+// districts. Correctness over speed — a slower load beats a wrong GDV.
+const PPD_PAGE_SIZE = 200;
+const PPD_MAX_PAGES = 20;
+
+// The minimum sold comps required to trust a median as real rather than
+// noise. Used both for the deal's GDV comps and for each Area Snapshot
+// property-type tile — below this, show "insufficient data", not a guess.
+const MIN_RELIABLE_COMPS = 5;
+
 // Attaches the caller's own Supabase access token to requests against our paid
 // EPC/PlanWire proxies, which the server uses to check plan/trial status
 // (see requireActiveAccess in serve.js). A 403 with { error: 'trial_expired' }
@@ -452,42 +465,91 @@ async function fetchPostcodeData(postcode) {
   return { district, lat: data.result.latitude, lng: data.result.longitude };
 }
 
-// Fetches 24 months of PPD data for the district (allows YoY comparison). The
-// Land Registry linked-data API is slow and inconsistent on larger districts,
-// so this gets a generous timeout of its own — it only feeds GDV/area stats,
-// which already degrade gracefully to the regional fallback if this fails.
-async function fetchLandRegistryComps(district, devType, propType) {
+// Pages through PPD for a district, newest-first, until the data runs out or
+// PPD_MAX_PAGES is hit. The Land Registry linked-data API is slow and
+// inconsistent on larger districts, so each page gets a generous timeout of
+// its own — this only feeds GDV/area stats, which already degrade gracefully
+// to the regional fallback if it fails outright. `onPage(n)` fires after each
+// page completes so the caller can surface a "this is taking a while"
+// loading state on high-volume districts.
+async function fetchDistrictTransactions(district, onPage) {
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - 24);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-  const url = `${PPD_API}?propertyAddress.district=${encodeURIComponent(district)}&min-transactionDate=${cutoffStr}&_pageSize=100&_sort=-transactionDate`;
-  const ppdResp = await fetch(url, { signal: AbortSignal.timeout(15000) });
-  if (!ppdResp.ok) throw new Error('PPD API error ' + ppdResp.status);
-  const ppdData = await ppdResp.json();
+  let allItems = [];
+  let page = 0;
+  let lastPageFull = false;
+  let pageFailed = false;
 
-  const allItems = ppdData.result?.items ?? [];
+  do {
+    const url = `${PPD_API}?propertyAddress.district=${encodeURIComponent(district)}&min-transactionDate=${cutoffStr}&_pageSize=${PPD_PAGE_SIZE}&_page=${page}&_sort=-transactionDate`;
+    let items;
+    try {
+      // Measured live against Dartford (~7-10s/page) and Birmingham (spiked
+      // to 70s+ on page 0 under load) — this API is genuinely slow on large
+      // districts, not just inconsistent. 25s balances tolerating that
+      // against not leaving the user staring at a spinner indefinitely.
+      const resp = await fetch(url, { signal: AbortSignal.timeout(25000) });
+      if (!resp.ok) throw new Error('PPD API error ' + resp.status);
+      const data = await resp.json();
+      items = data.result?.items ?? [];
+    } catch (e) {
+      // A page failing (timeout, transient network error) shouldn't discard
+      // pages already fetched — that would trade real comps for a rougher
+      // regional estimate. If we have nothing at all yet, this is a genuine
+      // API failure and should surface as one; otherwise stop here and use
+      // what's real, same as hitting the page cap.
+      if (page === 0) throw e;
+      pageFailed = true;
+      break;
+    }
+    allItems = allItems.concat(items);
+    lastPageFull = items.length === PPD_PAGE_SIZE;
+    page++;
+    if (onPage) onPage(page);
+  } while (lastPageFull && page < PPD_MAX_PAGES);
 
-  // Parse each record
+  // A genuine cap-out (page limit, or a later page failing mid-stream) rather
+  // than the district simply running out of sales naturally.
+  const hitCap = lastPageFull && (page >= PPD_MAX_PAGES || pageFailed);
+
   const transactions = allItems.map(item => ({
     price: item.pricePaid,
     date: new Date(item.transactionDate),
-    type: item.propertyType?.prefLabel?.[0]?._value ?? ''
+    type: item.propertyType?.prefLabel?.[0]?._value ?? '',
+    newBuild: item.newBuild === true
   })).filter(t => t.price > 0 && !isNaN(t.date));
+
+  const oldestCovered = transactions.length
+    ? new Date(Math.min(...transactions.map(t => t.date.getTime())))
+    : null;
+
+  return { transactions, oldestCovered, hitCap };
+}
+
+// Resolves both the GDV-driving comps (filtered to the deal's actual
+// end-product type) and the raw unfiltered pool the Area Snapshot needs, from
+// one shared paginated fetch — so the snapshot's "All types" figure can never
+// again be a devType-filtered median wearing the wrong label.
+async function fetchLandRegistryData(district, devType, propType, onPage) {
+  const { transactions: allTransactions, oldestCovered, hitCap } = await fetchDistrictTransactions(district, onPage);
 
   // Filter by end-product property type: the dev type's forced type (conversions)
   // takes priority over the user-selected property type (refurb/new build).
   const devForcedType = DEV_TYPE_TO_PPD_TYPE[devType];
   const propTypeFilter = PROP_TYPE_TO_PPD_TYPE[propType] || null;
   const typeFilter = devForcedType || propTypeFilter;
-  const filtered = typeFilter
-    ? transactions.filter(t => t.type === typeFilter)
-    : transactions;
+  const dealTransactions = typeFilter
+    ? allTransactions.filter(t => t.type === typeFilter)
+    : allTransactions;
 
   return {
-    transactions: filtered,
-    allTransactions: transactions,
-    filterSource: devForcedType ? 'devType' : (propTypeFilter ? 'propType' : null)
+    dealTransactions,
+    allTransactions,
+    filterSource: devForcedType ? 'devType' : (propTypeFilter ? 'propType' : null),
+    oldestCovered,
+    hitCap
   };
 }
 
@@ -809,6 +871,19 @@ async function runAppraisal() {
     return;
   }
 
+  // Both dropdowns default to an unselected placeholder rather than a real
+  // option — dev type forces a Land Registry comp filter (e.g. "Flat
+  // conversion" silently restricts comps to flats), so an unconsidered
+  // default would silently skew GDV for anything that isn't that type.
+  if (!devType) {
+    toast('Please select a development type', 'error');
+    return;
+  }
+  if (!propType) {
+    toast('Please select a property type', 'error');
+    return;
+  }
+
   // Normalise once, here, before any lookup fires — everything downstream
   // (Land Registry, postcodes.io, EPC, region tier resolution, storage
   // and display) works off this single canonically-formatted value.
@@ -847,6 +922,8 @@ async function runAppraisal() {
   let planwireResult = null;
   let conservationArea = null;
   let devTypePlanningIntel = null;
+  let oldestCovered = null;
+  let hitPageCap = false;
 
   // Postcode → district + coordinates resolves once, up front, fast. Land
   // Registry, EPC, flood, conservation and planning intel all key off this
@@ -862,8 +939,17 @@ async function runAppraisal() {
     fallbackReason = 'Could not resolve this postcode. GDV and area statistics are based on regional averages, not live market data.';
   }
 
+  // Larger districts can take several pages to pull — surface that as a
+  // distinct loading state after the first page, rather than leaving the
+  // "Running…" spinner looking hung.
+  const onLandRegistryPage = (page) => {
+    if (page === 2) {
+      btn.innerHTML = '<span class="loading-spinner"></span> Pulling comparable sales…';
+    }
+  };
+
   const [lrOutcome, epcOutcome, floodOutcome, planwireOutcome, conservationOutcome, devTypePlanningOutcome] = await Promise.allSettled([
-    pc ? fetchLandRegistryComps(pc.district, devType, propType) : Promise.reject('No district'),
+    pc ? fetchLandRegistryData(pc.district, devType, propType, onLandRegistryPage) : Promise.reject('No district'),
     fetchEpcData(postcode),
     pc ? fetchFloodRisk(pc.lat, pc.lng) : Promise.reject('No coords'),
     pc ? fetchPlanwireData(pc.lat, pc.lng) : Promise.reject('No coords'),
@@ -872,9 +958,11 @@ async function runAppraisal() {
   ]);
 
   if (lrOutcome.status === 'fulfilled') {
-    comps = lrOutcome.value.transactions;
+    comps = lrOutcome.value.dealTransactions;
     allComps = lrOutcome.value.allTransactions;
     filterSource = lrOutcome.value.filterSource;
+    oldestCovered = lrOutcome.value.oldestCovered;
+    hitPageCap = lrOutcome.value.hitCap;
   } else if (!usedFallback) {
     usedFallback = true;
     fallbackReason = 'The Land Registry API could not be reached. GDV and area statistics are based on regional averages, not live market data.';
@@ -920,12 +1008,81 @@ async function runAppraisal() {
     }
   }
 
-  // Require at least 5 comps in the last 12 months to trust the data
+  // Require at least 5 comps in the last 12 months to trust the data. Note
+  // this is specifically about comps of the deal's end-product type — the
+  // Area Snapshot below draws on the full unfiltered district pool
+  // independently, and may still show real data even when GDV can't.
   if (!usedFallback && last12.length < 5) {
     usedFallback = true;
     const label = district || postcodeOutward(postcode);
-    fallbackReason = `Only ${last12.length} sold comparable${last12.length === 1 ? '' : 's'} found in ${label} for the last 12 months. GDV and area statistics are based on regional averages, not live market data.`;
+    fallbackReason = `Only ${last12.length} sold comparable${last12.length === 1 ? '' : 's'} of this property type found in ${label} for the last 12 months. GDV is based on a regional average, not live market data.`;
   }
+
+  // --- Area Snapshot data ---
+  // Deliberately computed from allComps (unfiltered by devType/propType), not
+  // from the GDV comps above — the snapshot must show the real district
+  // market regardless of which end-product type this particular deal is
+  // filtering for. A "Flat conversion" deal should never make the area's
+  // "All types" figure look like a flats-only median.
+  const snapshotLast12 = allComps.filter(t => t.date >= twelveMonthsAgo);
+  const snapshotPrior12 = allComps.filter(t => t.date < twelveMonthsAgo);
+  const snapshotUsedFallback = snapshotLast12.length < MIN_RELIABLE_COMPS;
+
+  let snapshotMedianPrice = null, snapshotGrowth = null;
+  if (!snapshotUsedFallback) {
+    snapshotMedianPrice = median(snapshotLast12.map(t => t.price));
+    if (snapshotPrior12.length >= 3) {
+      const medPrior = median(snapshotPrior12.map(t => t.price));
+      snapshotGrowth = ((snapshotMedianPrice - medPrior) / medPrior) * 100;
+    } else {
+      // Not enough prior-year comps for a real YoY figure — the regional
+      // trend rate is used for the historical chart's shape only; the
+      // current price level above is still real, live comp data.
+      snapshotGrowth = fallbackGrowth;
+    }
+  }
+
+  // Real per-type medians, computed from the same unfiltered pool — no
+  // hardcoded ratios. `newBuild` is a PPD flag independent of property type,
+  // not one of the four house/flat categories, so it's matched separately.
+  const medianAndGrowth = (subsetLast12, subsetPrior12) => {
+    if (subsetLast12.length < MIN_RELIABLE_COMPS) {
+      return { count: subsetLast12.length, median: null, growth: null };
+    }
+    const med = median(subsetLast12.map(t => t.price));
+    let g = null;
+    if (subsetPrior12.length >= 3) {
+      const medPrior = median(subsetPrior12.map(t => t.price));
+      g = ((med - medPrior) / medPrior) * 100;
+    }
+    return { count: subsetLast12.length, median: med, growth: g };
+  };
+  const SNAPSHOT_TYPES = [
+    { name: 'Detached',      match: t => t.type === 'detached' },
+    { name: 'Semi-detached', match: t => t.type === 'semi-detached' },
+    { name: 'Terraced',      match: t => t.type === 'terraced' },
+    { name: 'Flat',          match: t => t.type === 'flat-maisonette' },
+    { name: 'New build',     match: t => t.newBuild }
+  ];
+  const typeBreakdown = SNAPSHOT_TYPES.map(({ name, match }) => ({
+    name,
+    ...medianAndGrowth(snapshotLast12.filter(match), snapshotPrior12.filter(match))
+  }));
+  typeBreakdown.push({
+    name: 'All types',
+    count: snapshotLast12.length,
+    median: snapshotMedianPrice,
+    growth: snapshotUsedFallback ? null : snapshotGrowth
+  });
+
+  // Pagination is capped, so on very high-volume districts "last 12 months"
+  // may not be what was actually retrieved — say so rather than mislabel it.
+  const got12MonthsCoverage = oldestCovered ? oldestCovered <= twelveMonthsAgo : false;
+  const snapshotWindowLabel = !allComps.length
+    ? 'No live data'
+    : got12MonthsCoverage
+      ? 'Last 12 months'
+      : `Partial data — back to ${oldestCovered.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} (${hitPageCap ? 'very high sales volume' : 'limited history available'})`;
 
   // --- Derive key figures ---
   let medianPrice, growth;
@@ -1070,7 +1227,10 @@ async function runAppraisal() {
 
   buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin, resilience);
   buildWhatIfSection(gdv, buildMid, purchase);
-  buildAreaSnapshot(postcode, district, region, growth, last12, medianPrice, usedFallback, epcResult, floodZone, planwireResult, conservationArea);
+  buildAreaSnapshot(postcode, district, region, {
+    medianPrice: snapshotMedianPrice, growth: snapshotGrowth, usedFallback: snapshotUsedFallback,
+    txCount: snapshotLast12.length, windowLabel: snapshotWindowLabel, typeBreakdown
+  }, epcResult, floodZone, planwireResult, conservationArea);
   buildDevTypePlanningCard(devTypePlanningIntel, devType);
   renderAvalorScore(score);
   buildMissedItemsSection(currentAppraisal);
@@ -1248,21 +1408,24 @@ function setRiskNote(id, cls, text) {
   el.textContent = text;
 }
 
-function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medianPrice, usedFallback, epcResult, floodZone, planwireResult, conservationArea) {
+function buildAreaSnapshot(postcode, district, region, snap, epcResult, floodZone, planwireResult, conservationArea) {
   const areaLabel = district || postcodeOutward(postcode);
   document.getElementById('snapshot-postcode').textContent = areaLabel;
 
-  // Metrics tiles
-  const txCount = usedFallback ? '—' : last12Comps.length.toString();
-  document.getElementById('snap-avg').textContent = fmt(medianPrice);
-  document.getElementById('snap-tx').textContent = txCount;
-  document.getElementById('snap-growth').textContent = (growth >= 0 ? '+' : '') + growth.toFixed(1) + '%';
+  // Metrics tiles — sourced from the district-wide, unfiltered comp pool
+  // (snap), independent of whatever devType/propType this deal is using.
+  document.getElementById('snap-avg').textContent = snap.usedFallback ? 'Insufficient data' : fmt(snap.medianPrice);
+  document.getElementById('snap-tx').textContent = snap.txCount.toString();
+  document.getElementById('snap-growth').textContent = snap.usedFallback
+    ? '—'
+    : (snap.growth >= 0 ? '+' : '') + snap.growth.toFixed(1) + '%';
 
-  // Update the transactions sub-label
+  // Update the transactions sub-label — honest about the actual window
+  // pagination retrieved, not a hardcoded "Last 12 months" claim.
   const txTile = document.getElementById('snap-tx').closest('.metric-tile');
   if (txTile) {
     const sub = txTile.querySelector('.metric-tile-sub');
-    if (sub) sub.textContent = usedFallback ? 'No live data' : 'Last 12 months';
+    if (sub) sub.textContent = snap.windowLabel;
   }
 
   // EPC flag
@@ -1368,49 +1531,62 @@ function buildAreaSnapshot(postcode, district, region, growth, last12Comps, medi
     }
   }
 
-  // 5-year price bars using growth rate
-  const years = ['2021', '2022', '2023', '2024', '2025'];
-  const annualRate = growth / 100;
-  const prices = years.map((y, i) => Math.round(medianPrice * Math.pow(1 - annualRate, 4 - i)));
-  const maxP = Math.max(...prices);
-
-  let barsHtml = '';
-  years.forEach((y, i) => {
-    const pct = Math.round((prices[i] / maxP) * 78);
-    const inside = pct > 28;
-    barsHtml += `
-      <div class="bar-row">
-        <div class="bar-year">${y}</div>
-        <div class="bar-track">
-          <div class="bar-fill" style="width:${pct}%">
-            ${inside ? `<span class="bar-val">${fmt(prices[i])}</span>` : ''}
+  // 5-year price bars — extrapolated backward from the real current-year
+  // median using the real (or regional-trend, see above) YoY growth rate.
+  // If even the all-types median is unreliable, there's nothing honest to
+  // chart, so this shows a message instead of a fabricated history.
+  const thisYear = new Date().getFullYear();
+  const years = [4, 3, 2, 1, 0].map(i => String(thisYear - i));
+  const priceBarsEl = document.getElementById('price-bars');
+  if (snap.usedFallback) {
+    priceBarsEl.innerHTML = `<div class="metric-tile-sub">Not enough sold comparables in ${escapeHtml(areaLabel)} to show price history.</div>`;
+  } else {
+    const annualRate = snap.growth / 100;
+    const prices = years.map((y, i) => Math.round(snap.medianPrice * Math.pow(1 - annualRate, 4 - i)));
+    const maxP = Math.max(...prices);
+    let barsHtml = '';
+    years.forEach((y, i) => {
+      const pct = Math.round((prices[i] / maxP) * 78);
+      const inside = pct > 28;
+      barsHtml += `
+        <div class="bar-row">
+          <div class="bar-year">${y}</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:${pct}%">
+              ${inside ? `<span class="bar-val">${fmt(prices[i])}</span>` : ''}
+            </div>
+            ${!inside ? `<span class="bar-val-out">${fmt(prices[i])}</span>` : ''}
           </div>
-          ${!inside ? `<span class="bar-val-out">${fmt(prices[i])}</span>` : ''}
-        </div>
-      </div>`;
-  });
-  document.getElementById('price-bars').innerHTML = barsHtml;
+        </div>`;
+    });
+    priceBarsEl.innerHTML = barsHtml;
+  }
 
-  // Property type breakdown (relative multiples from median — PPD REST doesn't support per-type breakdown without extra queries)
-  const types = [
-    { name: 'Detached',      mult: 1.85, change: (growth * 1.1).toFixed(1) },
-    { name: 'Semi-detached', mult: 1.20, change: growth.toFixed(1) },
-    { name: 'Terraced',      mult: 0.95, change: (growth * 0.95).toFixed(1) },
-    { name: 'Flat',          mult: 0.65, change: (growth * 0.25).toFixed(1) },
-    { name: 'New build',     mult: 1.35, change: (growth * 0.85).toFixed(1) },
-    { name: 'All types',     mult: 1.00, change: growth.toFixed(1) }
-  ];
-
+  // Property type breakdown — real per-type medians from live PPD data
+  // (computed in runAppraisal from the same unfiltered comp pool as "All
+  // types" above). Below MIN_RELIABLE_COMPS, a type shows "insufficient
+  // data" instead of a hardcoded multiplier standing in for a real figure.
   let typesHtml = '';
-  types.forEach(t => {
-    const price = Math.round(medianPrice * t.mult);
-    const changeNum = parseFloat(t.change);
-    typesHtml += `
-      <div class="type-tile">
-        <div class="type-name">${t.name}</div>
-        <div class="type-price">${fmt(price)}</div>
-        <div class="type-change ${changeNum >= 3 ? 'up' : 'flat'}">+${t.change}% this year</div>
-      </div>`;
+  snap.typeBreakdown.forEach(t => {
+    if (t.median === null) {
+      typesHtml += `
+        <div class="type-tile">
+          <div class="type-name">${escapeHtml(t.name)}</div>
+          <div class="type-price">Insufficient data</div>
+          <div class="type-change">${t.count} sale${t.count === 1 ? '' : 's'} in 12mo — too few to show a reliable median</div>
+        </div>`;
+    } else {
+      const changeText = t.growth === null
+        ? `${t.count} sold comp${t.count === 1 ? '' : 's'}`
+        : `${t.growth >= 0 ? '+' : ''}${t.growth.toFixed(1)}% this year`;
+      const changeCls = t.growth !== null && t.growth >= 3 ? 'up' : 'flat';
+      typesHtml += `
+        <div class="type-tile">
+          <div class="type-name">${escapeHtml(t.name)}</div>
+          <div class="type-price">${fmt(t.median)}</div>
+          <div class="type-change ${changeCls}">${changeText}</div>
+        </div>`;
+    }
   });
   document.getElementById('type-grid').innerHTML = typesHtml;
 }
