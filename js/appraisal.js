@@ -277,6 +277,18 @@ const MIN_RELIABLE_COMPS = 5;
 // both windows being compared, not just the prior one.
 const MIN_RELIABLE_GROWTH_COMPS = 8;
 
+// Even with enough comps in both windows, a lopsided split (e.g. 9 sales this
+// year vs 180 the year before) usually means one window is dominated by a
+// single development that happened to be selling then — comparing their
+// medians measures which development sold, not price movement. Require both
+// windows within this ratio of each other before trusting a growth figure.
+const MAX_GROWTH_COMP_RATIO = 3;
+
+function growthComparable(lastCount, priorCount) {
+  if (lastCount < MIN_RELIABLE_GROWTH_COMPS || priorCount < MIN_RELIABLE_GROWTH_COMPS) return false;
+  return Math.max(lastCount, priorCount) / Math.min(lastCount, priorCount) <= MAX_GROWTH_COMP_RATIO;
+}
+
 // Attaches the caller's own Supabase access token to requests against our paid
 // EPC/PlanWire proxies, which the server uses to check plan/trial status
 // (see requireActiveAccess in serve.js). A 403 with { error: 'trial_expired' }
@@ -1036,7 +1048,7 @@ async function runAppraisal() {
   let snapshotMedianPrice = null, snapshotGrowth = null;
   if (!snapshotUsedFallback) {
     snapshotMedianPrice = median(snapshotLast12.map(t => t.price));
-    if (snapshotLast12.length >= MIN_RELIABLE_GROWTH_COMPS && snapshotPrior12.length >= MIN_RELIABLE_GROWTH_COMPS) {
+    if (growthComparable(snapshotLast12.length, snapshotPrior12.length)) {
       const medPrior = median(snapshotPrior12.map(t => t.price));
       snapshotGrowth = ((snapshotMedianPrice - medPrior) / medPrior) * 100;
     } else {
@@ -1056,7 +1068,7 @@ async function runAppraisal() {
     }
     const med = median(subsetLast12.map(t => t.price));
     let g = null;
-    if (subsetLast12.length >= MIN_RELIABLE_GROWTH_COMPS && subsetPrior12.length >= MIN_RELIABLE_GROWTH_COMPS) {
+    if (growthComparable(subsetLast12.length, subsetPrior12.length)) {
       const medPrior = median(subsetPrior12.map(t => t.price));
       g = ((med - medPrior) / medPrior) * 100;
     }
@@ -1094,7 +1106,7 @@ async function runAppraisal() {
 
   if (!usedFallback) {
     medianPrice = median(last12.map(t => t.price));
-    if (last12.length >= MIN_RELIABLE_GROWTH_COMPS && prior12.length >= MIN_RELIABLE_GROWTH_COMPS) {
+    if (growthComparable(last12.length, prior12.length)) {
       const medPrior = median(prior12.map(t => t.price));
       growth = ((medianPrice - medPrior) / medPrior) * 100;
     } else {
