@@ -260,12 +260,19 @@ const PPD_API = 'https://landregistry.data.gov.uk/data/ppi/transaction-record.js
 const POSTCODES_API = 'https://api.postcodes.io/postcodes/';
 
 // 200 is the server-enforced ceiling on _pageSize — requesting more doesn't
-// get you more. 20 pages (4,000 rows) is a safety valve, not a target: it
-// comfortably covers a full 12 months even for Birmingham-sized districts
-// (measured live), so it should only ever bind on freakishly high-volume
-// districts. Correctness over speed — a slower load beats a wrong GDV.
+// get you more. PPD_TIME_BUDGET_MS is what actually governs pagination on
+// large districts in practice (measured live: Bromley needs 15+ pages/~48s
+// to reach a full 12 months, so page count alone was letting the wait run
+// past what users will tolerate). PPD_MAX_PAGES (4,000 rows) is a hard
+// backstop underneath that, not a target — it only binds if pages somehow
+// return fast enough to get there before the time budget does.
 const PPD_PAGE_SIZE = 200;
 const PPD_MAX_PAGES = 20;
+
+// Beyond ~20s people assume the page is broken, not still loading. Once this
+// elapses, pagination stops after the current page and uses whatever was
+// fetched — same honest "Partial data" path as hitting PPD_MAX_PAGES.
+const PPD_TIME_BUDGET_MS = 20000;
 
 // The minimum sold comps required to trust a median as real rather than
 // noise. Used both for the deal's GDV comps and for each Area Snapshot
@@ -511,22 +518,24 @@ async function fetchPpdFirstPage(url) {
   }
 }
 
-// Pages through PPD for a district, newest-first, until the data runs out or
-// PPD_MAX_PAGES is hit. The Land Registry linked-data API is slow and
-// inconsistent on larger districts, so each page gets a generous timeout of
-// its own — this only feeds GDV/area stats, which already degrade gracefully
-// to the regional fallback if it fails outright. `onPage(n)` fires after each
-// page completes so the caller can surface a "this is taking a while"
-// loading state on high-volume districts.
+// Pages through PPD for a district, newest-first, until the data runs out,
+// PPD_TIME_BUDGET_MS elapses, or PPD_MAX_PAGES is hit. The Land Registry
+// linked-data API is slow and inconsistent on larger districts, so each page
+// gets a generous timeout of its own — this only feeds GDV/area stats, which
+// already degrade gracefully to the regional fallback if it fails outright.
+// `onPage(n)` fires after each page completes so the caller can surface a
+// "this is taking a while" loading state on high-volume districts.
 async function fetchDistrictTransactions(district, onPage) {
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - 24);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
 
+  const startTime = Date.now();
   let allItems = [];
   let page = 0;
   let lastPageFull = false;
   let pageFailed = false;
+  let timedOut = false;
 
   do {
     const url = `${PPD_API}?propertyAddress.district=${encodeURIComponent(district)}&min-transactionDate=${cutoffStr}&_pageSize=${PPD_PAGE_SIZE}&_page=${page}&_sort=-transactionDate`;
@@ -547,11 +556,17 @@ async function fetchDistrictTransactions(district, onPage) {
     lastPageFull = items.length === PPD_PAGE_SIZE;
     page++;
     if (onPage) onPage(page);
+    if (lastPageFull && Date.now() - startTime >= PPD_TIME_BUDGET_MS) {
+      // Time budget governs in practice; PPD_MAX_PAGES below is the backstop
+      // for the rare case where pages return fast enough to reach it first.
+      timedOut = true;
+      break;
+    }
   } while (lastPageFull && page < PPD_MAX_PAGES);
 
-  // A genuine cap-out (page limit, or a later page failing mid-stream) rather
-  // than the district simply running out of sales naturally.
-  const hitCap = lastPageFull && (page >= PPD_MAX_PAGES || pageFailed);
+  // A genuine cap-out (page limit, time budget, or a later page failing
+  // mid-stream) rather than the district simply running out of sales naturally.
+  const hitCap = lastPageFull && (page >= PPD_MAX_PAGES || pageFailed || timedOut);
 
   const transactions = allItems.map(item => ({
     price: item.pricePaid,
@@ -1117,11 +1132,22 @@ async function runAppraisal() {
   // Pagination is capped, so on very high-volume districts "last 12 months"
   // may not be what was actually retrieved — say so rather than mislabel it.
   const got12MonthsCoverage = oldestCovered ? oldestCovered <= twelveMonthsAgo : false;
+  const oldestCoveredLabel = oldestCovered
+    ? oldestCovered.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '';
   const snapshotWindowLabel = !allComps.length
     ? 'No live data'
     : got12MonthsCoverage
       ? 'Last 12 months'
-      : `Partial data — back to ${oldestCovered.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} (${hitPageCap ? 'very high sales volume' : 'limited history available'})`;
+      : `Partial data — back to ${oldestCoveredLabel} (${hitPageCap ? 'very high sales volume' : 'limited history available'})`;
+
+  // A quieter per-tile sub-label isn't enough here — a user comparing two
+  // districts side by side needs this to be obvious at a glance, not
+  // something they only notice by reading fine print under one tile.
+  const isPartialWindow = allComps.length > 0 && !got12MonthsCoverage;
+  const snapshotBannerText = !isPartialWindow ? '' : hitPageCap
+    ? `Very high sales volume in this area means live data only reaches back to ${oldestCoveredLabel} — not a full 12 months. Figures below reflect this shorter window; other areas may show a full year and won't be directly comparable.`
+    : `Limited sales history is available for this area — live data only reaches back to ${oldestCoveredLabel}. Figures below reflect this shorter window, not a full year.`;
 
   // --- Derive key figures ---
   let medianPrice, growth;
@@ -1268,7 +1294,8 @@ async function runAppraisal() {
   buildWhatIfSection(gdv, buildMid, purchase);
   buildAreaSnapshot(postcode, district, region, {
     medianPrice: snapshotMedianPrice, growth: snapshotGrowth, usedFallback: snapshotUsedFallback,
-    txCount: snapshotLast12.length, windowLabel: snapshotWindowLabel, typeBreakdown
+    txCount: snapshotLast12.length, windowLabel: snapshotWindowLabel,
+    isPartialWindow, bannerText: snapshotBannerText, typeBreakdown
   }, epcResult, floodZone, planwireResult, conservationArea);
   buildDevTypePlanningCard(devTypePlanningIntel, devType);
   renderAvalorScore(score);
@@ -1459,12 +1486,19 @@ function buildAreaSnapshot(postcode, district, region, snap, epcResult, floodZon
     ? '—'
     : (snap.growth >= 0 ? '+' : '') + snap.growth.toFixed(1) + '%';
 
-  // Update the transactions sub-label — honest about the actual window
-  // pagination retrieved, not a hardcoded "Last 12 months" claim.
-  const txTile = document.getElementById('snap-tx').closest('.metric-tile');
-  if (txTile) {
-    const sub = txTile.querySelector('.metric-tile-sub');
-    if (sub) sub.textContent = snap.windowLabel;
+  // Both headline tiles get the actual window pagination retrieved, not a
+  // hardcoded "Last 12 months" claim — the avg price figure is just as much
+  // a product of the window as the transaction count is.
+  document.getElementById('snap-avg-sub').textContent = snap.windowLabel;
+  document.getElementById('snap-tx-sub').textContent = snap.windowLabel;
+
+  // A partial window needs to be obvious at a glance, not just readable in
+  // the tile sub-labels — otherwise comparing two districts' figures side by
+  // side silently compares mismatched windows.
+  const banner = document.getElementById('snapshot-partial-banner');
+  if (banner) {
+    banner.style.display = snap.isPartialWindow ? 'flex' : 'none';
+    if (snap.isPartialWindow) document.getElementById('snapshot-partial-text').textContent = snap.bannerText;
   }
 
   // EPC flag
