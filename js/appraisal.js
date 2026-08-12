@@ -272,6 +272,11 @@ const PPD_MAX_PAGES = 20;
 // property-type tile — below this, show "insufficient data", not a guess.
 const MIN_RELIABLE_COMPS = 5;
 
+// Growth compares two medians, so it compounds whatever noise either window
+// has — a higher bar than the median's own MIN_RELIABLE_COMPS. Applies to
+// both windows being compared, not just the prior one.
+const MIN_RELIABLE_GROWTH_COMPS = 8;
+
 // Attaches the caller's own Supabase access token to requests against our paid
 // EPC/PlanWire proxies, which the server uses to check plan/trial status
 // (see requireActiveAccess in serve.js). A 403 with { error: 'trial_expired' }
@@ -1031,7 +1036,7 @@ async function runAppraisal() {
   let snapshotMedianPrice = null, snapshotGrowth = null;
   if (!snapshotUsedFallback) {
     snapshotMedianPrice = median(snapshotLast12.map(t => t.price));
-    if (snapshotPrior12.length >= MIN_RELIABLE_COMPS) {
+    if (snapshotLast12.length >= MIN_RELIABLE_GROWTH_COMPS && snapshotPrior12.length >= MIN_RELIABLE_GROWTH_COMPS) {
       const medPrior = median(snapshotPrior12.map(t => t.price));
       snapshotGrowth = ((snapshotMedianPrice - medPrior) / medPrior) * 100;
     } else {
@@ -1051,7 +1056,7 @@ async function runAppraisal() {
     }
     const med = median(subsetLast12.map(t => t.price));
     let g = null;
-    if (subsetPrior12.length >= MIN_RELIABLE_COMPS) {
+    if (subsetLast12.length >= MIN_RELIABLE_GROWTH_COMPS && subsetPrior12.length >= MIN_RELIABLE_GROWTH_COMPS) {
       const medPrior = median(subsetPrior12.map(t => t.price));
       g = ((med - medPrior) / medPrior) * 100;
     }
@@ -1089,7 +1094,7 @@ async function runAppraisal() {
 
   if (!usedFallback) {
     medianPrice = median(last12.map(t => t.price));
-    if (prior12.length >= MIN_RELIABLE_COMPS) {
+    if (last12.length >= MIN_RELIABLE_GROWTH_COMPS && prior12.length >= MIN_RELIABLE_GROWTH_COMPS) {
       const medPrior = median(prior12.map(t => t.price));
       growth = ((medianPrice - medPrior) / medPrior) * 100;
     } else {
