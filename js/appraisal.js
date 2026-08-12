@@ -482,6 +482,35 @@ async function fetchPostcodeData(postcode) {
   return { district, lat: data.result.latitude, lng: data.result.longitude };
 }
 
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchPpdPage(url) {
+  // Measured live against Dartford (~7-10s/page) and Birmingham (spiked to
+  // 70s+ on page 0 under load) — this API is genuinely slow on large
+  // districts, not just inconsistent. 25s balances tolerating that against
+  // not leaving the user staring at a spinner indefinitely.
+  const resp = await fetch(url, { signal: AbortSignal.timeout(25000) });
+  if (!resp.ok) throw new Error('PPD API error ' + resp.status);
+  const data = await resp.json();
+  return data.result?.items ?? [];
+}
+
+// Retries page 0 up to twice (short backoff) before giving up — page 0 is
+// the one page whose failure means total data loss (nothing yet to fall
+// back on), unlike a later page failing, which just stops pagination with
+// whatever was already fetched. Worth the extra wait for that one page only.
+async function fetchPpdFirstPage(url) {
+  const delays = [1500, 3000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetchPpdPage(url);
+    } catch (e) {
+      if (attempt >= delays.length) throw e;
+      await sleep(delays[attempt]);
+    }
+  }
+}
+
 // Pages through PPD for a district, newest-first, until the data runs out or
 // PPD_MAX_PAGES is hit. The Land Registry linked-data API is slow and
 // inconsistent on larger districts, so each page gets a generous timeout of
@@ -503,14 +532,7 @@ async function fetchDistrictTransactions(district, onPage) {
     const url = `${PPD_API}?propertyAddress.district=${encodeURIComponent(district)}&min-transactionDate=${cutoffStr}&_pageSize=${PPD_PAGE_SIZE}&_page=${page}&_sort=-transactionDate`;
     let items;
     try {
-      // Measured live against Dartford (~7-10s/page) and Birmingham (spiked
-      // to 70s+ on page 0 under load) — this API is genuinely slow on large
-      // districts, not just inconsistent. 25s balances tolerating that
-      // against not leaving the user staring at a spinner indefinitely.
-      const resp = await fetch(url, { signal: AbortSignal.timeout(25000) });
-      if (!resp.ok) throw new Error('PPD API error ' + resp.status);
-      const data = await resp.json();
-      items = data.result?.items ?? [];
+      items = page === 0 ? await fetchPpdFirstPage(url) : await fetchPpdPage(url);
     } catch (e) {
       // A page failing (timeout, transient network error) shouldn't discard
       // pages already fetched — that would trade real comps for a rougher
