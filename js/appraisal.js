@@ -747,6 +747,31 @@ function renderBuildCostExplainer(a) {
   `;
 }
 
+// Standard residual valuation: GDV minus every real delivery cost except the
+// land price itself. SDLT is the one deliberate exclusion — it's a cost of
+// acquiring the land at whatever price is eventually agreed, not a cost of
+// delivering the scheme, so netting it here would be circular (SDLT depends
+// on the land price RLV is meant to inform). Called out explicitly so a user
+// doesn't read RLV as their all-in acquisition budget.
+function renderRlvExplainer(a) {
+  const el = document.getElementById('rlv-calc-body');
+  if (!el) return;
+
+  const profitReserve = a.gdv * 0.20;
+
+  el.innerHTML = `
+    <div><strong>GDV:</strong> ${fmt(a.gdv)}</div>
+    <div><strong>Less build cost:</strong> ${fmt(a.buildMid)}</div>
+    <div><strong>Less agent fees (1.5% of GDV):</strong> ${fmt(a.agentFees)}</div>
+    <div><strong>Less professional fees (12% of build):</strong> ${fmt(a.profFees)}</div>
+    <div><strong>Less contingency (10% of build):</strong> ${fmt(a.contingency)}</div>
+    <div><strong>Less finance:</strong> ${fmt(a.finance)}</div>
+    <div><strong>Less profit reserve (20% of GDV):</strong> ${fmt(profitReserve)}</div>
+    <div><strong>= Residual land value:</strong> ${fmt(a.rlv)}</div>
+    <div>Excludes SDLT — that's a cost of the land purchase itself, not of delivering the scheme. Budget it separately on top of whatever you pay for the site.</div>
+  `;
+}
+
 function getMargin(gdv, buildMid, purchase, sdlt, gdvVar, buildVar) {
   const g = gdv * (1 + gdvVar);
   const b = buildMid * (1 + buildVar);
@@ -1234,7 +1259,14 @@ async function runAppraisal() {
   const totalCosts = purchase + buildMid + sdlt + agentFees + profFees + contingency + finance;
   const profit = gdv - totalCosts;
   const margin = (profit / gdv) * 100;
-  const rlv = gdv - buildMid - (gdv * 0.20) - agentFees - profFees;
+  // Standard residual valuation: net off every real delivery cost except the
+  // land itself — build cost, fees, contingency, finance and the developer's
+  // profit reserve (pegged to the same 20% margin the tool calls "Viable").
+  // SDLT is deliberately excluded — it's a cost of acquiring the land at
+  // whatever price is eventually agreed, not a cost of delivering the
+  // scheme, so netting it here would be circular. Surfaced instead via the
+  // explainer/note so a user still budgets for it separately.
+  const rlv = gdv - buildMid - (gdv * 0.20) - agentFees - profFees - contingency - finance;
   const resilience = computeResilience(gdv, buildMid, purchase, sdlt);
 
   const score = computeAvalorScore({
@@ -1307,6 +1339,8 @@ async function runAppraisal() {
   const rlvNoteEl = document.getElementById('r-rlv-note');
   rlvNoteEl.className = 'metric-tile-sub' + (rlvNote.cls ? ' ' + rlvNote.cls : '');
   rlvNoteEl.textContent = rlvNote.text;
+
+  renderRlvExplainer({ gdv, buildMid, agentFees, profFees, contingency, finance, rlv });
 
   // SDLT breakdown — split the real banded calculation at £250k so the rows sum to the actual total
   const bandedTo250k = calcSdltBanded(Math.min(purchase, 250000));
