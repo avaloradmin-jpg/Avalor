@@ -695,9 +695,19 @@ function renderGdvExplainer(a) {
     compsLine = `${a.compCount} sold comp${a.compCount === 1 ? '' : 's'} in the last 12 months`;
   }
 
+  // The price level above can be real comp data even when growth isn't —
+  // growth needs a prior-year window to compare against, which is a
+  // separate (stricter) bar than just having enough current-year comps.
+  const growthLine = a.usedFallback
+    ? 'Regional trend rate — no live sales data available'
+    : a.growthIsFallback
+      ? 'Regional trend rate — not enough prior-year comps in this district for a locally measured YoY figure'
+      : 'Measured from local comps, year-on-year';
+
   el.innerHTML = `
     <div><strong>Data source:</strong> ${escapeHtml(sourceLine)}</div>
     <div><strong>Comparables used:</strong> ${escapeHtml(compsLine)}</div>
+    <div><strong>Growth basis:</strong> ${escapeHtml(growthLine)}</div>
     <div><strong>District:</strong> ${escapeHtml(areaLabel)}</div>
     <div><strong>Multiplier:</strong> ${escapeHtml(multiplierLine)}</div>
   `;
@@ -1082,17 +1092,21 @@ async function runAppraisal() {
   const snapshotPrior12 = allComps.filter(t => t.date < twelveMonthsAgo);
   const snapshotUsedFallback = snapshotLast12.length < MIN_RELIABLE_COMPS;
 
-  let snapshotMedianPrice = null, snapshotGrowth = null;
+  let snapshotMedianPrice = null, snapshotGrowth = null, snapshotChartGrowth = null;
   if (!snapshotUsedFallback) {
     snapshotMedianPrice = median(snapshotLast12.map(t => t.price));
     if (growthComparable(snapshotLast12.length, snapshotPrior12.length)) {
       const medPrior = median(snapshotPrior12.map(t => t.price));
       snapshotGrowth = ((snapshotMedianPrice - medPrior) / medPrior) * 100;
+      snapshotChartGrowth = snapshotGrowth;
     } else {
-      // Not enough prior-year comps for a real YoY figure — the regional
-      // trend rate is used for the historical chart's shape only; the
-      // current price level above is still real, live comp data.
-      snapshotGrowth = fallbackGrowth;
+      // Not enough prior-year comps for a real YoY figure. snapshotGrowth
+      // stays null so the "All types" tile and headline growth figure fall
+      // back to the same honest "insufficient data" treatment as the other
+      // type tiles, instead of quietly showing the regional constant as if
+      // it were measured. The regional trend rate is only used below to
+      // shape the 5-year chart, via the separate snapshotChartGrowth.
+      snapshotChartGrowth = fallbackGrowth;
     }
   }
 
@@ -1150,19 +1164,27 @@ async function runAppraisal() {
     : `Limited sales history is available for this area — live data only reaches back to ${oldestCoveredLabel}. Figures below reflect this shorter window, not a full year.`;
 
   // --- Derive key figures ---
-  let medianPrice, growth;
+  // growth feeds GDV directly, so unlike the area snapshot above it can't
+  // just fall back to "insufficient data" — the calculation needs some
+  // growth assumption to run. growthIsFallback tracks whether that
+  // assumption is the regional constant rather than a locally measured
+  // figure, so every place growth is displayed can say so.
+  let medianPrice, growth, growthIsFallback;
 
   if (!usedFallback) {
     medianPrice = median(last12.map(t => t.price));
     if (growthComparable(last12.length, prior12.length)) {
       const medPrior = median(prior12.map(t => t.price));
       growth = ((medianPrice - medPrior) / medPrior) * 100;
+      growthIsFallback = false;
     } else {
       growth = fallbackGrowth;
+      growthIsFallback = true;
     }
   } else {
     medianPrice = fallbackPpm * 90; // approx avg from £/sqm
     growth = fallbackGrowth;
+    growthIsFallback = true;
   }
 
   const ppm = Math.round(medianPrice / 90);
@@ -1193,7 +1215,7 @@ async function runAppraisal() {
   currentAppraisal = {
     postcode, devType, propType, region, purchase, area, units,
     gdv, gdvMultiplier, medianPrice, buildMid, sdlt, finance, profit, margin, rlv,
-    bcis, growth, ppm, compCount: last12.length, district, usedFallback,
+    bcis, growth, growthIsFallback, ppm, compCount: last12.length, district, usedFallback,
     usedPropTypeFallback, propTypeFilteredCount,
     epcResult, floodZone, planwireResult, conservationArea, devTypePlanningIntel,
     maxBuildOverrun: resilience.maxBuildOverrun, maxGdvDrop: resilience.maxGdvDrop,
@@ -1236,7 +1258,7 @@ async function runAppraisal() {
   document.getElementById('r-gdv-note').textContent = `${fmt(medianPrice)} ${gdvBasisLabel} × ${units} unit${units === 1 ? '' : 's'} × ${gdvMultiplier.toFixed(2)} = ${fmt(gdv)}`;
 
   renderGdvExplainer({
-    usedFallback, usedPropTypeFallback, district, postcode, region, devType, propType,
+    usedFallback, usedPropTypeFallback, growthIsFallback, district, postcode, region, devType, propType,
     compCount: last12.length, propTypeFilteredCount, gdvMultiplier
   });
 
@@ -1293,7 +1315,8 @@ async function runAppraisal() {
   buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin, resilience);
   buildWhatIfSection(gdv, buildMid, purchase);
   buildAreaSnapshot(postcode, district, region, {
-    medianPrice: snapshotMedianPrice, growth: snapshotGrowth, usedFallback: snapshotUsedFallback,
+    medianPrice: snapshotMedianPrice, growth: snapshotGrowth, chartGrowth: snapshotChartGrowth,
+    usedFallback: snapshotUsedFallback,
     txCount: snapshotLast12.length, windowLabel: snapshotWindowLabel,
     isPartialWindow, bannerText: snapshotBannerText, typeBreakdown
   }, epcResult, floodZone, planwireResult, conservationArea);
@@ -1303,7 +1326,10 @@ async function runAppraisal() {
 
   const growthWidth = Math.min(90, Math.max(10, (Math.abs(growth) / 10) * 100));
   document.getElementById('growth-fill').style.width = growthWidth + '%';
-  document.getElementById('growth-pct').textContent = (growth >= 0 ? '+' : '') + growth.toFixed(1) + '% p/a';
+  const growthPctEl = document.getElementById('growth-pct');
+  growthPctEl.textContent = (growth >= 0 ? '+' : '') + growth.toFixed(1) + '% p/a'
+    + (growthIsFallback ? ' (regional est.)' : '');
+  growthPctEl.style.color = growthIsFallback ? 'var(--amber)' : 'var(--green)';
 
   document.getElementById('results').style.display = 'block';
   document.getElementById('save-btn').style.display = 'inline-flex';
@@ -1482,7 +1508,7 @@ function buildAreaSnapshot(postcode, district, region, snap, epcResult, floodZon
   // (snap), independent of whatever devType/propType this deal is using.
   document.getElementById('snap-avg').textContent = snap.usedFallback ? 'Insufficient data' : fmt(snap.medianPrice);
   document.getElementById('snap-tx').textContent = snap.txCount.toString();
-  document.getElementById('snap-growth').textContent = snap.usedFallback
+  document.getElementById('snap-growth').textContent = (snap.usedFallback || snap.growth === null)
     ? '—'
     : (snap.growth >= 0 ? '+' : '') + snap.growth.toFixed(1) + '%';
 
@@ -1614,7 +1640,7 @@ function buildAreaSnapshot(postcode, district, region, snap, epcResult, floodZon
   if (snap.usedFallback) {
     priceBarsEl.innerHTML = `<div class="metric-tile-sub">Not enough sold comparables in ${escapeHtml(areaLabel)} to show price history.</div>`;
   } else {
-    const annualRate = snap.growth / 100;
+    const annualRate = snap.chartGrowth / 100;
     const prices = years.map((y, i) => Math.round(snap.medianPrice * Math.pow(1 - annualRate, 4 - i)));
     const maxP = Math.max(...prices);
     let barsHtml = '';
