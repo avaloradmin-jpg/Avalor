@@ -205,7 +205,7 @@ function render(deal) {
         <div class="metric-tile highlight"><div class="metric-tile-label">Margin on GDV</div><div class="metric-tile-value">${deal.margin}%</div></div>
         <div class="metric-tile"><div class="metric-tile-label">GDV</div><div class="metric-tile-value">${fmt(deal.gdv)}</div></div>
         <div class="metric-tile"><div class="metric-tile-label">Profit</div><div class="metric-tile-value">${fmt(deal.profit)}</div></div>
-        <div class="metric-tile"><div class="metric-tile-label">Build cost</div><div class="metric-tile-value">${fmt(deal.build_cost)}</div></div>
+        <div class="metric-tile"><div class="metric-tile-label">Build cost</div><div class="metric-tile-value">${fmt(deal.build_cost)}</div>${extra.usedBuildCostOverride ? '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">Custom estimate, not BCIS-derived</div>' : ''}</div>
         <div class="metric-tile"><div class="metric-tile-label">SDLT</div><div class="metric-tile-value">${fmt(deal.sdlt)}</div></div>
         <div class="metric-tile"><div class="metric-tile-label">Residual land value</div><div class="metric-tile-value">${fmt(deal.rlv)}</div></div>
       </div>

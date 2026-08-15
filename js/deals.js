@@ -312,16 +312,21 @@ async function loadCompare() {
     return `<span class="flag ${cls}">${txt}</span>`;
   };
 
+  const extraOf = (deal) => {
+    try { return JSON.parse(deal.appraisal_data || '{}'); } catch (_) { return {}; }
+  };
+
   // growthIsFallback is only present in appraisal_data for deals saved after
   // it was added — for older saves, fall back to usedFallback (which always
   // implies fallback growth too, just without the narrower lopsided-window
   // case) rather than silently assuming the growth figure was measured.
-  const growthFallback = (deal) => {
-    let extra = {};
-    try { extra = JSON.parse(deal.appraisal_data || '{}'); } catch (_) {}
-    return extra.growthIsFallback ?? extra.usedFallback ?? false;
+  const growthLabel = (deal) => {
+    const extra = extraOf(deal);
+    const isFallback = extra.growthIsFallback ?? extra.usedFallback ?? false;
+    return `+${deal.growth_rate}% p/a${isFallback ? ' <span style="opacity:0.7;font-size:11px">(regional est.)</span>' : ''}`;
   };
-  const growthLabel = (deal) => `+${deal.growth_rate}% p/a${growthFallback(deal) ? ' <span style="opacity:0.7;font-size:11px">(regional est.)</span>' : ''}`;
+  const buildCostLabel = (deal) =>
+    `${f(deal.build_cost)}${extraOf(deal).usedBuildCostOverride ? ' <span style="opacity:0.7;font-size:11px">(your estimate)</span>' : ''}`;
 
   container.innerHTML = `
     <table class="compare-table">
@@ -336,7 +341,7 @@ async function loadCompare() {
       <tbody>
         <tr class="compare-section-row"><th colspan="3">Financials</th></tr>
         <tr><td class="compare-label-col">GDV</td><td class="compare-deal-col ${better(d1.gdv, d2.gdv)}">${f(d1.gdv)}</td><td class="compare-deal-col-2 ${better(d2.gdv, d1.gdv)}">${f(d2.gdv)}</td></tr>
-        <tr><td class="compare-label-col">Build cost</td><td class="compare-deal-col ${better(d1.build_cost, d2.build_cost, false)}">${f(d1.build_cost)}</td><td class="compare-deal-col-2 ${better(d2.build_cost, d1.build_cost, false)}">${f(d2.build_cost)}</td></tr>
+        <tr><td class="compare-label-col">Build cost</td><td class="compare-deal-col ${better(d1.build_cost, d2.build_cost, false)}">${buildCostLabel(d1)}</td><td class="compare-deal-col-2 ${better(d2.build_cost, d1.build_cost, false)}">${buildCostLabel(d2)}</td></tr>
         <tr><td class="compare-label-col">SDLT</td><td class="compare-deal-col ${better(d1.sdlt, d2.sdlt, false)}">${f(d1.sdlt)}</td><td class="compare-deal-col-2 ${better(d2.sdlt, d1.sdlt, false)}">${f(d2.sdlt)}</td></tr>
         <tr><td class="compare-label-col">Profit</td><td class="compare-deal-col ${better(d1.profit, d2.profit)}">${f(d1.profit)}</td><td class="compare-deal-col-2 ${better(d2.profit, d1.profit)}">${f(d2.profit)}</td></tr>
         <tr><td class="compare-label-col">Margin on GDV</td><td class="compare-deal-col ${better(d1.margin, d2.margin)}" style="font-size:16px;font-weight:600">${d1.margin}%</td><td class="compare-deal-col-2 ${better(d2.margin, d1.margin)}" style="font-size:16px;font-weight:600">${d2.margin}%</td></tr>

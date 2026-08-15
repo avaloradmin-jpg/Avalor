@@ -203,6 +203,11 @@ function updateUnitsVisibility() {
 }
 updateUnitsVisibility();
 
+function toggleBuildCostOverride() {
+  const checked = document.getElementById('build-cost-override-toggle').checked;
+  document.getElementById('build-cost-override-field').style.display = checked ? '' : 'none';
+}
+
 // End-product property type for each dev type — used to filter comps.
 // Conversions always produce flats regardless of what "Property type" the
 // user selected, so this takes priority over PROP_TYPE_TO_PPD_TYPE below.
@@ -290,6 +295,13 @@ const MIN_RELIABLE_GROWTH_COMPS = 8;
 // medians measures which development sold, not price movement. Require both
 // windows within this ratio of each other before trusting a growth figure.
 const MAX_GROWTH_COMP_RATIO = 3;
+
+// How far a custom build cost's implied £/m² can sit outside the BCIS
+// low–high range before it's flagged in Missed Items — wide enough that a
+// real quote which is simply different from a national benchmark isn't
+// nagged, tight enough to catch a genuine error (fees folded in, a missing
+// digit, wrong units).
+const BUILD_COST_OVERRIDE_FLAG_THRESHOLD = 0.25;
 
 function growthComparable(lastCount, priorCount) {
   if (lastCount < MIN_RELIABLE_GROWTH_COMPS || priorCount < MIN_RELIABLE_GROWTH_COMPS) return false;
@@ -732,6 +744,21 @@ function renderBuildCostExplainer(a) {
   const el = document.getElementById('build-calc-body');
   if (!el) return;
 
+  // A custom figure replaces the BCIS rate as the input to the calculation,
+  // but the BCIS range is still shown for comparison — region-adjusted, same
+  // as it would be if it were driving the number — so the user can see how
+  // their own figure stacks up against the benchmark it's replacing.
+  if (a.usedBuildCostOverride) {
+    el.innerHTML = `
+      <div><strong>Data source:</strong> Your custom estimate — not BCIS-derived</div>
+      <div><strong>Figure used:</strong> ${fmt(a.buildMid)} (£${Math.round(a.buildCostImpliedRate).toLocaleString('en-GB')}/m² implied, at ${a.area}m²)</div>
+      <div><strong>No region adjustment:</strong> your figure is used exactly as entered</div>
+      <div><strong>BCIS benchmark, for comparison:</strong> £${a.bcis.low.toLocaleString('en-GB')} – £${a.bcis.high.toLocaleString('en-GB')}/m² for ${escapeHtml(a.devType)} (region-adjusted)</div>
+      <div>Excludes professional fees and contingency — these are costed separately.</div>
+    `;
+    return;
+  }
+
   const regionLine = !a.regionMatched
     ? `<div><strong>Region adjustment:</strong> None — postcode is outside our mapped UK regions (e.g. Scotland, Northern Ireland), so the UK national average rate is used</div>`
     : a.regionMultiplier !== 1
@@ -978,9 +1005,16 @@ async function runAppraisal() {
   const units = MULTI_UNIT_DEV_TYPES.includes(devType)
     ? (parseInt(document.getElementById('units').value) || 2)
     : 1;
+  const buildCostOverrideEnabled = document.getElementById('build-cost-override-toggle').checked;
+  const buildCostOverrideRaw = parseFloat(document.getElementById('build-cost-override').value);
 
   if (!postcodeRaw) {
     toast('Please enter a postcode', 'error');
+    return;
+  }
+
+  if (buildCostOverrideEnabled && !(buildCostOverrideRaw > 0)) {
+    toast('Enter a valid build cost, or untick "Use my own build cost"', 'error');
     return;
   }
 
@@ -1250,7 +1284,12 @@ async function runAppraisal() {
   const gdvMultiplier = GDV_MULTIPLIER[devType] ?? 0.85;
   const gdv = medianPrice * units * gdvMultiplier;
 
-  const buildMid = area * bcis.mid;
+  // A custom figure is used exactly as entered — no region multiplier, no
+  // BCIS rate involved at all. bcis (region-adjusted) stays around purely as
+  // the benchmark to compare it against, not as an input to it.
+  const usedBuildCostOverride = buildCostOverrideEnabled && buildCostOverrideRaw > 0;
+  const buildMid = usedBuildCostOverride ? buildCostOverrideRaw : area * bcis.mid;
+  const buildCostImpliedRate = usedBuildCostOverride ? buildMid / area : null;
   const sdlt = calcSDLT(purchase);
   const agentFees = gdv * 0.015;
   const profFees = buildMid * 0.12;
@@ -1281,6 +1320,7 @@ async function runAppraisal() {
     gdv, gdvMultiplier, medianPrice, buildMid, sdlt, finance, profit, margin, rlv,
     bcis, growth, growthIsFallback, ppm, compCount: last12.length, district, usedFallback,
     usedPropTypeFallback, propTypeFilteredCount,
+    usedBuildCostOverride, buildCostImpliedRate,
     epcResult, floodZone, planwireResult, conservationArea, article4Result, devTypePlanningIntel,
     maxBuildOverrun: resilience.maxBuildOverrun, maxGdvDrop: resilience.maxGdvDrop,
     score
@@ -1302,11 +1342,19 @@ async function runAppraisal() {
   document.getElementById('r-rlv').textContent = fmt(rlv);
   document.getElementById('r-bcis').textContent = `£${bcis.low.toLocaleString()} – £${bcis.high.toLocaleString()}/m²`;
 
-  document.getElementById('r-build-note').textContent = `£${bcis.mid.toLocaleString('en-GB')}/m² × ${area}m² = ${fmt(buildMid)}`;
+  document.getElementById('r-build-note').textContent = usedBuildCostOverride
+    ? `Your custom estimate — £${Math.round(buildCostImpliedRate).toLocaleString('en-GB')}/m² implied`
+    : `£${bcis.mid.toLocaleString('en-GB')}/m² × ${area}m² = ${fmt(buildMid)}`;
 
+  // Region multiplier only ever applies to the BCIS rate, never to a custom
+  // figure — this note exists to explain an adjustment, so with no
+  // adjustment happening there's nothing honest to say here.
   const regionNoteEl = document.getElementById('r-build-region-note');
   if (regionNoteEl) {
-    if (!regionTier.matched) {
+    if (usedBuildCostOverride) {
+      regionNoteEl.classList.remove('warn');
+      regionNoteEl.textContent = 'Used exactly as entered — no region adjustment applied to your own figure.';
+    } else if (!regionTier.matched) {
       regionNoteEl.textContent = `Postcode outside our mapped UK regions (e.g. Scotland, Northern Ireland) — UK national average build cost applied instead.`;
       regionNoteEl.classList.add('warn');
     } else {
@@ -1326,7 +1374,10 @@ async function runAppraisal() {
     compCount: last12.length, propTypeFilteredCount, gdvMultiplier
   });
 
-  renderBuildCostExplainer({ bcis, bcisNational, regionMultiplier, region, regionMatched: regionTier.matched, area, buildMid, devType });
+  renderBuildCostExplainer({
+    bcis, bcisNational, regionMultiplier, region, regionMatched: regionTier.matched, area, buildMid, devType,
+    usedBuildCostOverride, buildCostImpliedRate
+  });
 
   document.getElementById('r-sdlt-note').textContent = getSdltNote(sdlt, purchase);
 
@@ -1893,6 +1944,27 @@ function computeMissedItems(a) {
       title: `Not enough ${propLabel} sales to filter GDV by property type`,
       text: `Only ${a.propTypeFilteredCount} sold ${propLabel} comparable${a.propTypeFilteredCount === 1 ? '' : 's'} were found in ${areaLabel} in the last 12 months — too few to trust on their own. GDV instead uses the median sold price across all property types in ${areaLabel}, which may run higher or lower than ${propLabel} values specifically.`
     });
+  }
+
+  // Custom build cost sits well outside the BCIS benchmark range in either
+  // direction — worth a second look either way, not just when it's high.
+  if (a.usedBuildCostOverride) {
+    const lowBound = a.bcis.low * (1 - BUILD_COST_OVERRIDE_FLAG_THRESHOLD);
+    const highBound = a.bcis.high * (1 + BUILD_COST_OVERRIDE_FLAG_THRESHOLD);
+    const impliedRate = Math.round(a.buildCostImpliedRate);
+    if (impliedRate > highBound) {
+      items.push({
+        severity: 'warn',
+        title: 'Your build cost is well above the BCIS benchmark',
+        text: `Your figure implies £${impliedRate.toLocaleString('en-GB')}/m², more than 25% above the BCIS range of £${a.bcis.low.toLocaleString('en-GB')}–£${a.bcis.high.toLocaleString('en-GB')}/m² for ${a.devType.toLowerCase()}. Worth double-checking it doesn't already include professional fees or contingency — those are added on top of build cost elsewhere in this appraisal, and double-counting them here would understate your margin.`
+      });
+    } else if (impliedRate < lowBound) {
+      items.push({
+        severity: 'warn',
+        title: 'Your build cost is well below the BCIS benchmark',
+        text: `Your figure implies £${impliedRate.toLocaleString('en-GB')}/m², more than 25% below the BCIS range of £${a.bcis.low.toLocaleString('en-GB')}–£${a.bcis.high.toLocaleString('en-GB')}/m² for ${a.devType.toLowerCase()}. Worth double-checking it covers the full scope of works — a figure this far under benchmark can mean missing items (fees, finishes, M&E) rather than a genuinely cheaper build.`
+      });
+    }
   }
 
   // Article 4 is deliberately excluded from the Planning Risk score (to avoid
