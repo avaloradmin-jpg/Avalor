@@ -312,6 +312,17 @@ async function loadCompare() {
     return `<span class="flag ${cls}">${txt}</span>`;
   };
 
+  // growthIsFallback is only present in appraisal_data for deals saved after
+  // it was added — for older saves, fall back to usedFallback (which always
+  // implies fallback growth too, just without the narrower lopsided-window
+  // case) rather than silently assuming the growth figure was measured.
+  const growthFallback = (deal) => {
+    let extra = {};
+    try { extra = JSON.parse(deal.appraisal_data || '{}'); } catch (_) {}
+    return extra.growthIsFallback ?? extra.usedFallback ?? false;
+  };
+  const growthLabel = (deal) => `+${deal.growth_rate}% p/a${growthFallback(deal) ? ' <span style="opacity:0.7;font-size:11px">(regional est.)</span>' : ''}`;
+
   container.innerHTML = `
     <table class="compare-table">
       <colgroup><col style="width:36%"><col style="width:32%"><col style="width:32%"></colgroup>
@@ -332,7 +343,7 @@ async function loadCompare() {
         <tr><td class="compare-label-col">Residual land value</td><td class="compare-deal-col ${better(d1.rlv, d2.rlv)}">${f(d1.rlv)}</td><td class="compare-deal-col-2 ${better(d2.rlv, d1.rlv)}">${f(d2.rlv)}</td></tr>
         <tr class="compare-section-row"><th colspan="3">Market</th></tr>
         <tr><td class="compare-label-col">Region</td><td class="compare-deal-col">${d1.region}</td><td class="compare-deal-col-2">${d2.region}</td></tr>
-        <tr><td class="compare-label-col">5yr price growth</td><td class="compare-deal-col ${better(d1.growth_rate, d2.growth_rate)}">+${d1.growth_rate}% p/a</td><td class="compare-deal-col-2 ${better(d2.growth_rate, d1.growth_rate)}">+${d2.growth_rate}% p/a</td></tr>
+        <tr><td class="compare-label-col">Price growth (annual)</td><td class="compare-deal-col ${better(d1.growth_rate, d2.growth_rate)}">${growthLabel(d1)}</td><td class="compare-deal-col-2 ${better(d2.growth_rate, d1.growth_rate)}">${growthLabel(d2)}</td></tr>
         <tr class="compare-section-row"><th colspan="3">Verdict</th></tr>
         <tr><td class="compare-label-col">Overall</td><td class="compare-deal-col">${verdictFlag(d1.verdict)}</td><td class="compare-deal-col-2">${verdictFlag(d2.verdict)}</td></tr>
       </tbody>

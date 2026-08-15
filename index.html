@@ -987,11 +987,24 @@
         color-adjust: exact !important;
       }
 
-      /* Hide everything except results */
+      /* Hide everything except results. #data-banner is deliberately NOT
+         listed here — when an appraisal used the regional fallback, that
+         disclosure needs to survive into the printed/PDF output, not just
+         the on-screen view. Its own display:none/flex toggle (via
+         showDataBanner/hideDataBanner) still controls whether it renders
+         at all. */
       .topbar, .sidebar, .page-header, #onboarding-card, #trial-banner,
-      #property-details-card, #data-banner, .detail-toggle, #whatif-panel,
+      #property-details-card, .detail-toggle, #whatif-panel,
       #page-saved, #page-compare, #page-account, .modal-overlay,
       .btn, [id$="-btn"] { display: none !important; }
+
+      /* GDV/build-cost "How is this calculated?" panels are collapsed
+         <details> by default — browsers don't print collapsed <details>
+         content, so without this override, a printed fallback-based
+         appraisal would carry no visible explanation of why. Force them
+         open for print regardless of on-screen state. */
+      .calc-detail-body { display: block !important; }
+      .calc-detail summary::before { display: none !important; }
 
       body { background: #FFFFFF !important; color: #111827 !important; font-size: 13px; }
       .app-layout { display: block !important; }
@@ -1522,7 +1535,10 @@
                 <div class="risk-item-row"><span>Flood zone</span><span class="flag flag-safe" id="flag-flood">Zone 1 — low risk</span></div>
                 <div class="risk-item-note" id="flag-flood-note"></div>
               </li>
-              <li class="risk-item"><div class="risk-item-row"><span>Article 4 direction</span><span class="flag flag-safe" id="flag-a4">Not applicable</span></div></li>
+              <li class="risk-item">
+                <div class="risk-item-row"><span>Article 4 direction</span><span class="flag flag-warn" id="flag-a4">Checking…</span></div>
+                <div class="risk-item-note" id="flag-a4-note"></div>
+              </li>
               <li class="risk-item">
                 <div class="risk-item-row"><span>Conservation area</span><span class="flag flag-warn" id="flag-conservation">Checking…</span></div>
                 <div class="risk-item-note" id="flag-conservation-note"></div>
@@ -1537,7 +1553,7 @@
             <div class="price-growth-bar">
               <i class="ti ti-trending-up" style="color:var(--green);flex-shrink:0"></i>
               <div class="growth-track"><div class="growth-fill" id="growth-fill" style="width:62%"></div></div>
-              <span style="font-size:13px">5yr avg: <strong style="color:var(--green)" id="growth-pct">+6.2% p/a</strong></span>
+              <span style="font-size:13px">Growth rate: <strong style="color:var(--green)" id="growth-pct">+6.2% p/a</strong></span>
             </div>
           </div>
         </div>

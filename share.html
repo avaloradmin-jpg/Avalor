@@ -84,6 +84,9 @@
   .cta-card p { font-size: 14px; opacity: 0.9; margin-bottom: 1.25rem; }
   .cta-btn { display: inline-block; background: #fff; color: var(--green-dark); font-weight: 600; padding: 11px 24px; border-radius: var(--radius-sm); text-decoration: none; font-size: 14px; }
 
+  .data-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--amber-light); border: 1px solid var(--amber); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 1.5rem; font-size: 13px; color: #7A4E00; }
+  .data-banner i { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+
   .footer-note { text-align: center; font-size: 12px; color: var(--text-tertiary); margin-top: 1.5rem; }
 
   .state-msg { text-align: center; padding: 3rem 1.5rem; color: var(--text-secondary); }
@@ -142,6 +145,13 @@ function conservationFlag(conservationArea) {
   return conservationArea ? { cls: 'flag-risk', text: 'Yes — additional controls apply' } : { cls: 'flag-safe', text: 'No' };
 }
 
+function article4Flag(article4Result) {
+  if (!article4Result) return { cls: 'flag-warn', text: 'Not available' };
+  return article4Result.present
+    ? { cls: 'flag-risk', text: 'Yes — PD rights may be restricted' }
+    : { cls: 'flag-safe', text: 'None found in available data' };
+}
+
 function showError(message) {
   document.getElementById('content').innerHTML = `
     <div class="card">
@@ -166,11 +176,22 @@ function render(deal) {
   const flood = floodFlag(extra.floodZone);
   const planning = planningFlags(extra.planwireResult);
   const conservation = conservationFlag(extra.conservationArea);
+  const article4 = article4Flag(extra.article4Result);
+
+  // GDV/build cost/SDLT/profit/RLV below are all driven by medianPrice, which
+  // falls back to a regional £/sqm estimate whenever there wasn't enough live
+  // Land Registry data — a third party viewing this link has no other way to
+  // know that, so it has to be disclosed here too, not just on the live app.
+  const fallbackBanner = extra.usedFallback
+    ? `<div class="data-banner"><i class="ti ti-alert-triangle"></i><div>GDV and the figures below are based on a regional average, not live Land Registry sales data — there weren't enough sold comparables available for this postcode when this appraisal was run. Treat these as an estimate, not a measured market value.</div></div>`
+    : '';
 
   document.getElementById('content').innerHTML = `
     <div class="card">
       <div class="deal-title">${deal.name}</div>
       <div class="deal-sub">${deal.dev_type || ''} · ${deal.units || '—'} unit${deal.units !== 1 ? 's' : ''} · ${deal.region || ''}</div>
+
+      ${fallbackBanner}
 
       <div class="verdict ${v.cls}">
         <i class="ti ${v.icon}"></i>
@@ -196,6 +217,7 @@ function render(deal) {
         <li class="risk-item"><span>Planning approvals (nearby)</span><span class="flag ${planning.approvals.cls}">${planning.approvals.text}</span></li>
         <li class="risk-item"><span>Recent refusals</span><span class="flag ${planning.refusals.cls}">${planning.refusals.text}</span></li>
         <li class="risk-item"><span>Conservation area</span><span class="flag ${conservation.cls}">${conservation.text}</span></li>
+        <li class="risk-item"><span>Article 4 direction</span><span class="flag ${article4.cls}">${article4.text}</span></li>
       </ul>
     </div>
 

@@ -378,6 +378,21 @@ async function fetchConservationArea(lat, lng) {
   return (data.count ?? 0) > 0;
 }
 
+// planning.data.gov.uk's article-4-direction-area dataset — same shape and
+// caveats as conservation-area above (beta, not every local authority has
+// published to it yet), so a miss here means "none found in available data",
+// not a confirmed absence. Directions vary in scope (some cover unrelated
+// things like agricultural buildings, not residential PD rights), so the
+// `name` field is surfaced where present rather than asserting relevance.
+async function fetchArticle4Direction(lat, lng) {
+  const url = `https://www.planning.data.gov.uk/entity.json?dataset=article-4-direction-area&latitude=${lat}&longitude=${lng}&limit=1`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(6000) });
+  if (!resp.ok) throw new Error('Article 4 direction lookup failed: ' + resp.status);
+  const data = await resp.json();
+  const entity = (data.entities ?? [])[0];
+  return { present: (data.count ?? 0) > 0, name: entity?.name ?? null };
+}
+
 async function fetchPlanwireData(lat, lng) {
   const url = `${PLANWIRE_PROXY}?path=${encodeURIComponent('v1/applications/nearby')}&lat=${lat}&lng=${lng}&radius_km=0.5&limit=10`;
   const resp = await authedFetch(url, { signal: AbortSignal.timeout(8000) });
@@ -732,9 +747,13 @@ function renderBuildCostExplainer(a) {
   `;
 }
 
-function getMargin(gdv, buildMid, purchase, sdlt, finance, gdvVar, buildVar) {
+function getMargin(gdv, buildMid, purchase, sdlt, gdvVar, buildVar) {
   const g = gdv * (1 + gdvVar);
   const b = buildMid * (1 + buildVar);
+  // Finance is recomputed from the varied build cost, not held at its base
+  // value — a build overrun draws down more loan, so it should cost more
+  // interest too. Matches computeWhatIf's handling of the same scenario.
+  const finance = (purchase + b) * 0.065;
   const agentFees = g * 0.015;
   const profFees = b * 0.12;
   const contingency = b * 0.10;
@@ -800,8 +819,13 @@ function scoreConstructionRisk(devType, bcis, maxBuildOverrun) {
   return clamp(base - uncertaintyPenalty + headroomBonus, 0, 100);
 }
 
-function scoreMarketDemand(growth, compCount, usedFallback) {
-  const growthScore = clamp(50 + growth * 5, 0, 100);
+function scoreMarketDemand(growth, compCount, usedFallback, growthIsFallback) {
+  // growthIsFallback means the growth figure is the hardcoded regional
+  // constant, not measured from local comps — pin the growth component to
+  // neutral rather than letting a fake number push the score up or down.
+  // liquidityScore is unaffected: compCount is still real even when growth
+  // specifically couldn't be measured (see growthComparable).
+  const growthScore = growthIsFallback ? 50 : clamp(50 + growth * 5, 0, 100);
   const liquidityScore = clamp((compCount / 15) * 100, 0, 100);
   const combined = growthScore * 0.6 + liquidityScore * 0.4;
   return usedFallback ? Math.min(50, combined) : combined;
@@ -825,12 +849,12 @@ function scoreExitStrategy(maxGdvDrop, rlv, purchase, epcResult) {
   return clamp(gdvScore * 0.45 + rlvScore * 0.25 + epcScore * 0.30, 0, 100);
 }
 
-function computeAvalorScore({ margin, rlv, purchase, growth, compCount, usedFallback, floodZone, planwireResult, conservationArea, devType, bcis, maxBuildOverrun, maxGdvDrop, epcResult }) {
+function computeAvalorScore({ margin, rlv, purchase, growth, compCount, usedFallback, growthIsFallback, floodZone, planwireResult, conservationArea, devType, bcis, maxBuildOverrun, maxGdvDrop, epcResult }) {
   const profitability = scoreProfitability(margin);
   const planningRisk = scorePlanningRisk(planwireResult, conservationArea, devType);
   const floodEnvironmental = scoreFloodEnvironmental(floodZone);
   const constructionRisk = scoreConstructionRisk(devType, bcis, maxBuildOverrun);
-  const marketDemand = scoreMarketDemand(growth, compCount, usedFallback);
+  const marketDemand = scoreMarketDemand(growth, compCount, usedFallback, growthIsFallback);
   const exitStrategy = scoreExitStrategy(maxGdvDrop, rlv, purchase, epcResult);
 
   const overall =
@@ -985,6 +1009,7 @@ async function runAppraisal() {
   let floodZone = null;
   let planwireResult = null;
   let conservationArea = null;
+  let article4Result = null;
   let devTypePlanningIntel = null;
   let oldestCovered = null;
   let hitPageCap = false;
@@ -1012,12 +1037,13 @@ async function runAppraisal() {
     }
   };
 
-  const [lrOutcome, epcOutcome, floodOutcome, planwireOutcome, conservationOutcome, devTypePlanningOutcome] = await Promise.allSettled([
+  const [lrOutcome, epcOutcome, floodOutcome, planwireOutcome, conservationOutcome, article4Outcome, devTypePlanningOutcome] = await Promise.allSettled([
     pc ? fetchLandRegistryData(pc.district, devType, propType, onLandRegistryPage) : Promise.reject('No district'),
     fetchEpcData(postcode),
     pc ? fetchFloodRisk(pc.lat, pc.lng) : Promise.reject('No coords'),
     pc ? fetchPlanwireData(pc.lat, pc.lng) : Promise.reject('No coords'),
     pc ? fetchConservationArea(pc.lat, pc.lng) : Promise.reject('No coords'),
+    pc ? fetchArticle4Direction(pc.lat, pc.lng) : Promise.reject('No coords'),
     pc ? fetchDevTypePlanningIntel(pc.lat, pc.lng, devType) : Promise.reject('No coords')
   ]);
 
@@ -1051,6 +1077,7 @@ async function runAppraisal() {
   if (floodOutcome.status === 'fulfilled') floodZone = floodOutcome.value;
   if (planwireOutcome.status === 'fulfilled') planwireResult = planwireOutcome.value;
   if (conservationOutcome.status === 'fulfilled') conservationArea = conservationOutcome.value;
+  if (article4Outcome.status === 'fulfilled') article4Result = article4Outcome.value;
   if (devTypePlanningOutcome.status === 'fulfilled') devTypePlanningIntel = devTypePlanningOutcome.value;
 
   // Split into last 12 months and prior 12 months for YoY growth
@@ -1182,12 +1209,17 @@ async function runAppraisal() {
       growthIsFallback = true;
     }
   } else {
-    medianPrice = fallbackPpm * 90; // approx avg from £/sqm
+    // area is the whole site's floor area (same input build cost uses), so
+    // for multi-unit schemes divide by units first — medianPrice needs to
+    // represent one typical sold unit, since GDV multiplies it by units
+    // below. A fixed 90m² assumption ignored both the deal's actual size and
+    // unit count entirely.
+    medianPrice = fallbackPpm * (area / units);
     growth = fallbackGrowth;
     growthIsFallback = true;
   }
 
-  const ppm = Math.round(medianPrice / 90);
+  const ppm = Math.round(medianPrice / (area / units));
 
   // GDV: median comp × units × dev-type multiplier (see GDV_MULTIPLIER above)
   const gdvMultiplier = GDV_MULTIPLIER[devType] ?? 0.85;
@@ -1203,10 +1235,10 @@ async function runAppraisal() {
   const profit = gdv - totalCosts;
   const margin = (profit / gdv) * 100;
   const rlv = gdv - buildMid - (gdv * 0.20) - agentFees - profFees;
-  const resilience = computeResilience(gdv, buildMid, purchase, sdlt, finance);
+  const resilience = computeResilience(gdv, buildMid, purchase, sdlt);
 
   const score = computeAvalorScore({
-    margin, rlv, purchase, growth, compCount: last12.length, usedFallback,
+    margin, rlv, purchase, growth, compCount: last12.length, usedFallback, growthIsFallback,
     floodZone, planwireResult, conservationArea, devType, bcis,
     maxBuildOverrun: resilience.maxBuildOverrun, maxGdvDrop: resilience.maxGdvDrop,
     epcResult
@@ -1217,7 +1249,7 @@ async function runAppraisal() {
     gdv, gdvMultiplier, medianPrice, buildMid, sdlt, finance, profit, margin, rlv,
     bcis, growth, growthIsFallback, ppm, compCount: last12.length, district, usedFallback,
     usedPropTypeFallback, propTypeFilteredCount,
-    epcResult, floodZone, planwireResult, conservationArea, devTypePlanningIntel,
+    epcResult, floodZone, planwireResult, conservationArea, article4Result, devTypePlanningIntel,
     maxBuildOverrun: resilience.maxBuildOverrun, maxGdvDrop: resilience.maxGdvDrop,
     score
   };
@@ -1319,7 +1351,7 @@ async function runAppraisal() {
     usedFallback: snapshotUsedFallback,
     txCount: snapshotLast12.length, windowLabel: snapshotWindowLabel,
     isPartialWindow, bannerText: snapshotBannerText, typeBreakdown
-  }, epcResult, floodZone, planwireResult, conservationArea);
+  }, epcResult, floodZone, planwireResult, conservationArea, article4Result);
   buildDevTypePlanningCard(devTypePlanningIntel, devType);
   renderAvalorScore(score);
   buildMissedItemsSection(currentAppraisal);
@@ -1340,19 +1372,19 @@ async function runAppraisal() {
   document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function computeResilience(gdv, buildMid, purchase, sdlt, finance) {
+function computeResilience(gdv, buildMid, purchase, sdlt) {
   const gdvVars = [-0.20, -0.10, 0, 0.10, 0.20];
   const buildVars = [-0.20, -0.10, 0, 0.10, 0.20];
 
   let maxBuildOverrun = -0.20;
   for (const bv of buildVars) {
-    const m = getMargin(gdv, buildMid, purchase, sdlt, finance, 0, bv);
+    const m = getMargin(gdv, buildMid, purchase, sdlt, 0, bv);
     if (m >= 12) maxBuildOverrun = bv;
   }
 
   let maxGdvDrop = 0.20;
   for (const gv of gdvVars) {
-    const m = getMargin(gdv, buildMid, purchase, sdlt, finance, gv, 0);
+    const m = getMargin(gdv, buildMid, purchase, sdlt, gv, 0);
     if (m >= 12) maxGdvDrop = gv;
   }
 
@@ -1500,7 +1532,7 @@ function setRiskNote(id, cls, text) {
   el.textContent = text;
 }
 
-function buildAreaSnapshot(postcode, district, region, snap, epcResult, floodZone, planwireResult, conservationArea) {
+function buildAreaSnapshot(postcode, district, region, snap, epcResult, floodZone, planwireResult, conservationArea, article4Result) {
   const areaLabel = district || postcodeOutward(postcode);
   document.getElementById('snapshot-postcode').textContent = areaLabel;
 
@@ -1627,6 +1659,31 @@ function buildAreaSnapshot(postcode, district, region, snap, epcResult, floodZon
       conservationEl.className = 'flag flag-safe';
       conservationEl.textContent = 'No';
       setRiskNote('flag-conservation-note', '', 'No extra conservation constraints here — standard permitted development rules apply.');
+    }
+  }
+
+  // Article 4 direction flag — planning.data.gov.uk's article-4-direction-area
+  // dataset is beta and doesn't yet cover every local authority, so a miss
+  // means "none found in available data", not a confirmed absence. Directions
+  // vary in scope (some remove agricultural PD rights, unrelated to
+  // residential conversions), so this can't claim relevance to this specific
+  // devType — it surfaces the direction name where available and leaves
+  // confirmation to the LPA.
+  const a4El = document.getElementById('flag-a4');
+  if (a4El) {
+    if (!article4Result) {
+      a4El.className = 'flag flag-warn';
+      a4El.textContent = "Couldn't check";
+      setRiskNote('flag-a4-note', '', "We weren't able to look this up — this isn't confirmation either way, it's a failed lookup. Check the local authority's Article 4 register before assuming either way.");
+    } else if (article4Result.present) {
+      a4El.className = 'flag flag-risk';
+      a4El.textContent = 'Yes — permitted development rights may be restricted';
+      const named = article4Result.name ? ` ("${article4Result.name}")` : '';
+      setRiskNote('flag-a4-note', 'risk', `An Article 4 direction${named} covers this site. Scope varies by direction — some remove permitted development rights relevant to conversions, others cover unrelated things entirely. Confirm exactly what it restricts with the local authority before relying on permitted development.`);
+    } else {
+      a4El.className = 'flag flag-safe';
+      a4El.textContent = 'No Article 4 direction found in available data';
+      setRiskNote('flag-a4-note', '', "No Article 4 direction found in this dataset, but coverage isn't complete for every local authority yet — this isn't a guarantee, particularly for HMO conversions. Check the local authority's Article 4 register to confirm.");
     }
   }
 
@@ -1804,13 +1861,16 @@ function computeMissedItems(a) {
     });
   }
 
-  // Conservation area flag is shown regardless of dev type, but the score
-  // deliberately doesn't penalise HMO conversion for it — Article 4 is the real risk
-  if (a.conservationArea === true && a.devType === 'HMO conversion') {
+  // Article 4 is deliberately excluded from the Planning Risk score (to avoid
+  // double-counting against the live local approval rate already factored
+  // in), so a confirmed direction is worth surfacing here — for an HMO
+  // conversion specifically, it's often the actual deciding factor in
+  // whether permitted development is available at all.
+  if (a.article4Result && a.article4Result.present && a.devType === 'HMO conversion') {
     items.push({
       severity: 'risk',
-      title: "Conservation area doesn't factor into your HMO planning score",
-      text: "This site is in a conservation area, but that isn't factored into your Planning Risk score for HMO conversions. What actually matters here is whether an Article 4 Direction removes permitted development rights for C3-to-C4 use — conservation areas often overlap with these. Worth checking with the local authority directly."
+      title: "Article 4 direction doesn't factor into your HMO planning score",
+      text: "This site has a confirmed Article 4 direction (see the risk flag above), but it isn't factored into your Planning Risk score — deliberately, to avoid double-counting against the local approval rate. For an HMO conversion, this is often the actual deciding factor in whether permitted development is available at all. Confirm exactly what rights it removes with the local authority before relying on PD."
     });
   }
 
