@@ -2,6 +2,8 @@
 
 // BCIS Q1 2026 benchmark rates, £/m², ex-VAT, UK national average — excludes
 // professional fees and contingency. Adjusted per-appraisal by REGION_TIERS.
+// Left as published (not developer-adjusted) so this stays a clean drop-in
+// when BCIS releases a new quarter's figures — see DEVELOPER_ADJUSTMENT below.
 const BCIS = {
   'Loft conversion':          { low: 1150, mid: 1450, high: 1900 },
   'Flat conversion':          { low: 1150, mid: 1550, high: 2150 },
@@ -11,6 +13,16 @@ const BCIS = {
   'Full refurbishment':       { low: 1150, mid: 1400, high: 1900 },
   'New build':                { low: 1400, mid: 1850, high: 2450 }
 };
+
+// BCIS rates price a main contractor appointment — margin and preliminaries
+// included. Our users are typically solo developers self-managing with their
+// own subcontractors, who genuinely run 20-30% below contracted rates; we
+// apply the low end of that range. Applied to the national baseline before
+// the regional multiplier, so regional variation still tracks BCIS's own
+// geography. Anyone pricing on a full contract basis should expect to pay
+// more than the figures we show — that's what the custom build cost
+// override is for.
+const DEVELOPER_ADJUSTMENT = 0.80;
 
 // Regional build cost tier vs UK national average (1.00) — labour, access and
 // materials delivery costs vary well below national-region level, which is why
@@ -753,7 +765,7 @@ function renderBuildCostExplainer(a) {
       <div><strong>Data source:</strong> Your custom estimate — not BCIS-derived</div>
       <div><strong>Figure used:</strong> ${fmt(a.buildMid)} (£${Math.round(a.buildCostImpliedRate).toLocaleString('en-GB')}/m² implied, at ${a.area}m²)</div>
       <div><strong>No region adjustment:</strong> your figure is used exactly as entered</div>
-      <div><strong>BCIS benchmark, for comparison:</strong> £${a.bcis.low.toLocaleString('en-GB')} – £${a.bcis.high.toLocaleString('en-GB')}/m² for ${escapeHtml(a.devType)} (region-adjusted)</div>
+      <div><strong>BCIS benchmark, for comparison:</strong> £${a.bcis.low.toLocaleString('en-GB')} – £${a.bcis.high.toLocaleString('en-GB')}/m² for ${escapeHtml(a.devType)} (self-managed developer rate, region-adjusted — see below)</div>
       <div>Excludes professional fees and contingency — these are costed separately.</div>
     `;
     return;
@@ -762,15 +774,17 @@ function renderBuildCostExplainer(a) {
   const regionLine = !a.regionMatched
     ? `<div><strong>Region adjustment:</strong> None — postcode is outside our mapped UK regions (e.g. Scotland, Northern Ireland), so the UK national average rate is used</div>`
     : a.regionMultiplier !== 1
-    ? `<div><strong>Region adjustment:</strong> £${a.bcisNational.mid.toLocaleString('en-GB')}/m² national average × ${a.regionMultiplier.toFixed(2)} (${escapeHtml(a.region)}) = £${a.bcis.mid.toLocaleString('en-GB')}/m²</div>`
+    ? `<div><strong>Region adjustment:</strong> £${a.bcisNational.mid.toLocaleString('en-GB')}/m² national average (adjusted) × ${a.regionMultiplier.toFixed(2)} (${escapeHtml(a.region)}) = £${a.bcis.mid.toLocaleString('en-GB')}/m²</div>`
     : `<div><strong>Region adjustment:</strong> None — ${escapeHtml(a.region)} is at the UK national average</div>`;
 
   el.innerHTML = `
     <div><strong>Data source:</strong> BCIS Q1 2026 benchmark rates, £/m², ex-VAT, UK national average</div>
+    <div><strong>Developer adjustment:</strong> £${a.bcisRaw.mid.toLocaleString('en-GB')}/m² BCIS rate × 0.80 = £${a.bcisNational.mid.toLocaleString('en-GB')}/m² — BCIS prices a main contractor appointment with margin and preliminaries included; we assume a self-managed development using your own subcontractors instead</div>
     ${regionLine}
     <div><strong>Rate used:</strong> £${a.bcis.mid.toLocaleString('en-GB')}/m² (mid) × ${a.area}m² = ${fmt(a.buildMid)}</div>
     <div><strong>Range:</strong> £${a.bcis.low.toLocaleString('en-GB')} – £${a.bcis.high.toLocaleString('en-GB')}/m² for ${escapeHtml(a.devType)}</div>
     <div>Excludes professional fees and contingency — these are costed separately.</div>
+    <div>Pricing on a full contract basis instead? Expect to pay more than this range — use the custom build cost override to enter your own quote.</div>
   `;
 }
 
@@ -1047,7 +1061,12 @@ async function runAppraisal() {
   const regionTier = resolveRegionTier(postcode);
   const region = regionTier.name;
   const regionMultiplier = regionTier.mult;
-  const bcisNational = BCIS[devType] || BCIS['Flat conversion'];
+  const bcisRaw = BCIS[devType] || BCIS['Flat conversion'];
+  const bcisNational = {
+    low:  Math.round(bcisRaw.low  * DEVELOPER_ADJUSTMENT),
+    mid:  Math.round(bcisRaw.mid  * DEVELOPER_ADJUSTMENT),
+    high: Math.round(bcisRaw.high * DEVELOPER_ADJUSTMENT)
+  };
   const bcis = {
     low:  Math.round(bcisNational.low  * regionMultiplier),
     mid:  Math.round(bcisNational.mid  * regionMultiplier),
@@ -1375,7 +1394,7 @@ async function runAppraisal() {
   });
 
   renderBuildCostExplainer({
-    bcis, bcisNational, regionMultiplier, region, regionMatched: regionTier.matched, area, buildMid, devType,
+    bcis, bcisNational, bcisRaw, regionMultiplier, region, regionMatched: regionTier.matched, area, buildMid, devType,
     usedBuildCostOverride, buildCostImpliedRate
   });
 
