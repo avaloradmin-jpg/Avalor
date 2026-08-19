@@ -783,6 +783,7 @@
       align-items: center;
       justify-content: center;
       padding: 2rem;
+      overflow-y: auto;
     }
 
     .modal-backdrop.open { display: flex; }
@@ -972,6 +973,13 @@
       .landing-hero h1 { font-size: 30px; }
       .landing-nav { padding: 14px 1.25rem; }
       .landing-hero, .landing-section { padding-left: 1.25rem; padding-right: 1.25rem; }
+      /* align-items:center clips the top of the modal once its content is
+         taller than the viewport — a scrollable flex container only extends
+         its scrollable area on the end side, not the centered start side.
+         Top-aligning on mobile lets the backdrop's overflow-y:auto reach
+         the full modal instead. */
+      .modal-backdrop { align-items: flex-start; padding: 1.25rem 0.75rem; }
+      .modal { padding: 1.5rem 1.25rem; }
     }
     /* ── PDF EXPORT ─────────────────────────────────────────────────────────── */
     #pdf-print-header { display: none; }
