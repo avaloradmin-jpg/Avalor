@@ -1499,13 +1499,19 @@ function buildDealSummary({ purchase, gdv, buildMid, rlv, margin, bcis, usedBuil
 
   // Positive = % headroom on that lever alone before the deal fails.
   // Whichever is smaller is the one actually at risk of doing so first —
-  // same comparison the resilience headroom bars are built from.
+  // same comparison the resilience headroom bars are built from. Margin
+  // >= 12 here guarantees both are >= 0, so "more than 0%" (i.e. zero
+  // headroom) is the only edge case worth its own wording.
   const buildHeadroom = maxBuildOverrun;
   const gdvHeadroom = -maxGdvDrop;
-  const buildIsTighter = buildHeadroom < gdvHeadroom;
-  const riskClause = buildIsTighter
-    ? `build costs running more than ${Math.round(buildHeadroom * 100)}% over budget`
-    : `the sale price coming in more than ${Math.round(gdvHeadroom * 100)}% below what's assumed`;
+  let riskClause;
+  if (buildHeadroom <= 0 && gdvHeadroom <= 0) {
+    riskClause = 'any overrun on the build cost or any drop in the sale price';
+  } else if (buildHeadroom < gdvHeadroom) {
+    riskClause = `build costs running more than ${Math.round(buildHeadroom * 100)}% over budget`;
+  } else {
+    riskClause = `the sale price coming in more than ${Math.round(gdvHeadroom * 100)}% below what's assumed`;
+  }
 
   // GDV — and everything derived from it here (RLV, target price, cushion)
   // — is a regional or unfiltered estimate whenever the comps fell back.
@@ -1567,7 +1573,14 @@ function renderDealSummary(margin, summary) {
 }
 
 function computeResilience(gdv, buildMid, purchase, sdlt) {
-  const gdvVars = [-0.20, -0.10, 0, 0.10, 0.20];
+  // Best-case to worst-case order matters: each loop keeps overwriting its
+  // result for as long as margin >= 12, so the last value it can still pass
+  // on is the one that survives. buildVars runs low-cost -> high-cost (worst
+  // last) correctly. gdvVars must mirror that as high-GDV -> low-GDV (worst
+  // last) — ascending order here would let a passing base case get
+  // overwritten by "better" values and never record the actual worst
+  // survivable drop.
+  const gdvVars = [0.20, 0.10, 0, -0.10, -0.20];
   const buildVars = [-0.20, -0.10, 0, 0.10, 0.20];
 
   let maxBuildOverrun = -0.20;
