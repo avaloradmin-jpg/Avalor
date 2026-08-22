@@ -1448,6 +1448,13 @@ async function runAppraisal() {
     marginEl.style.color = 'var(--red)';
   }
 
+  const dealSummary = buildDealSummary({
+    purchase, gdv, buildMid, rlv, margin, bcis, usedBuildCostOverride, buildCostImpliedRate,
+    maxBuildOverrun: resilience.maxBuildOverrun, maxGdvDrop: resilience.maxGdvDrop,
+    usedFallback, usedPropTypeFallback, propType
+  });
+  renderDealSummary(margin, dealSummary);
+
   buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin, resilience);
   buildWhatIfSection(gdv, buildMid, purchase);
   buildAreaSnapshot(postcode, district, region, {
@@ -1474,6 +1481,89 @@ async function runAppraisal() {
   markOnboardingStep(1);
 
   document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// --- Deal summary (verdict paragraph, sits above the Avalor Score) ---
+// Every number here is already computed elsewhere in the appraisal (margin,
+// rlv, resilience headroom) — this only phrases them. No new arithmetic, so
+// nothing here can disagree with the tiles/cards below it.
+function buildDealSummary({ purchase, gdv, buildMid, rlv, margin, bcis, usedBuildCostOverride, buildCostImpliedRate, maxBuildOverrun, maxGdvDrop, usedFallback, usedPropTypeFallback, propType }) {
+  const targetPrice = Math.max(0, Math.round(rlv / 5000) * 5000);
+  const cushion = rlv - purchase;
+
+  // A BCIS-derived build cost always sits inside the BCIS range by
+  // construction — only a custom figure can be inflated, so this only ever
+  // fires for overrides, same threshold used to flag it elsewhere.
+  const buildCostAlsoHigh = usedBuildCostOverride
+    && buildCostImpliedRate > bcis.high * (1 + BUILD_COST_OVERRIDE_FLAG_THRESHOLD);
+
+  // Positive = % headroom on that lever alone before the deal fails.
+  // Whichever is smaller is the one actually at risk of doing so first —
+  // same comparison the resilience headroom bars are built from.
+  const buildHeadroom = maxBuildOverrun;
+  const gdvHeadroom = -maxGdvDrop;
+  const buildIsTighter = buildHeadroom < gdvHeadroom;
+  const riskClause = buildIsTighter
+    ? `build costs running more than ${Math.round(buildHeadroom * 100)}% over budget`
+    : `the sale price coming in more than ${Math.round(gdvHeadroom * 100)}% below what's assumed`;
+
+  // GDV — and everything derived from it here (RLV, target price, cushion)
+  // — is a regional or unfiltered estimate whenever the comps fell back.
+  // Every branch below leans on GDV, so the caveat has to travel with all of them.
+  const dataCaveat = usedFallback
+    ? ' That valuation rests on a regional estimate rather than local sales data, so treat it as a starting point, not a fixed ceiling.'
+    : usedPropTypeFallback
+      ? ` That valuation is based on all property types sold in the area, not just ${(propType || '').toLowerCase()} specifically, so treat it as a starting point, not a fixed ceiling.`
+      : '';
+
+  let headline, detail;
+
+  if (margin < 12) {
+    headline = "This doesn't stack up.";
+    const buildClause = buildCostAlsoHigh
+      ? `the ${fmt(buildMid)} build cost is also running high for the area, but`
+      : `the ${fmt(buildMid)} build cost isn't the problem —`;
+    detail = `You're paying <strong>${fmt(purchase)}</strong> for a property worth <strong>${fmt(gdv)}</strong> once finished, so ${buildClause} the purchase price is. `
+      + `Even a clean build and a strong sale won't rescue a deal that's already underwater — cost overruns or a soft market would only take it further behind. `
+      + (targetPrice > 0
+        ? `You'd need to be buying at around <strong>${fmt(targetPrice)}</strong> for this to work at a 20% margin.`
+        : `Even a nominal purchase price wouldn't get this to a 20% margin — fees, finance and contingency alone outweigh what the finished scheme is worth.`)
+      + dataCaveat;
+  } else if (margin < 20) {
+    headline = 'This works, but only just.';
+    detail = `At a ${fmtPct(margin)} margin, you're paying <strong>${fmt(purchase)}</strong> against a residual land value of <strong>${fmt(rlv)}</strong> — ${fmt(Math.abs(cushion))} more than the site supports at a comfortable 20% margin. `
+      + `The main risk is ${riskClause} — either alone would be enough to tip this into loss. `
+      + `Getting closer to <strong>${fmt(targetPrice)}</strong> would buy you real cushion, rather than relying on nothing going wrong.`
+      + dataCaveat;
+  } else {
+    headline = 'This works.';
+    detail = `You're buying at <strong>${fmt(purchase)}</strong> against a residual land value of <strong>${fmt(rlv)}</strong> — about <strong>${fmt(cushion)}</strong> of cushion at a 20% margin. `
+      + `The main risk is on execution, not the price: ${riskClause} before this stops being viable.`
+      + dataCaveat;
+  }
+
+  return { headline, detail };
+}
+
+function renderDealSummary(margin, summary) {
+  const box = document.getElementById('deal-summary-box');
+  const icon = document.getElementById('deal-summary-icon');
+  const headline = document.getElementById('deal-summary-headline');
+  const detail = document.getElementById('deal-summary-detail');
+  if (!box) return;
+
+  if (margin >= 20) {
+    box.className = 'resilience-summary good';
+    icon.className = 'ti ti-circle-check';
+  } else if (margin >= 12) {
+    box.className = 'resilience-summary ok';
+    icon.className = 'ti ti-alert-triangle';
+  } else {
+    box.className = 'resilience-summary bad';
+    icon.className = 'ti ti-circle-x';
+  }
+  headline.textContent = summary.headline;
+  detail.innerHTML = summary.detail;
 }
 
 function computeResilience(gdv, buildMid, purchase, sdlt) {
