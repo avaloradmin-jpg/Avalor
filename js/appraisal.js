@@ -621,12 +621,41 @@ async function fetchDistrictTransactions(district, onPage) {
   return { transactions, oldestCovered, hitCap };
 }
 
+// District-wide sales are independent of devType/propType — those are
+// filters applied afterwards, below — so the cache key is the district
+// alone. Without this, changing only the property type or the purchase
+// price on the same site re-runs the full paginated fetch and risks a
+// different comp sample landing this time purely from live-API timing
+// (PPD_TIME_BUDGET_MS governs how many pages complete before pagination
+// gives up on a high-volume district — see fetchDistrictTransactions).
+// Only the first, cold fetch for a district pays that budget; every
+// appraisal after it in the same session reuses the result untouched.
+//
+// This is a session-only cache — a plain in-memory Map, cleared on reload.
+// A fresh appraisal tomorrow re-fetches live and can land a different
+// sample again; this only guarantees consistency *within* a session, e.g.
+// while comparing purchase prices on the same site back to back. Saved
+// deals aren't affected either way — saveCurrentAppraisal() snapshots the
+// computed figures into the database at save time, it doesn't replay this
+// fetch, so a saved deal's numbers don't move regardless of what a later
+// appraisal (cached or not) returns.
+const districtCompsCache = new Map();
+
+async function fetchDistrictTransactionsCached(district, onPage) {
+  const cached = districtCompsCache.get(district);
+  if (cached) return { ...cached, fromCache: true };
+  const data = await fetchDistrictTransactions(district, onPage);
+  const entry = { ...data, fetchedAt: new Date() };
+  districtCompsCache.set(district, entry);
+  return { ...entry, fromCache: false };
+}
+
 // Resolves both the GDV-driving comps (filtered to the deal's actual
 // end-product type) and the raw unfiltered pool the Area Snapshot needs, from
 // one shared paginated fetch — so the snapshot's "All types" figure can never
 // again be a devType-filtered median wearing the wrong label.
 async function fetchLandRegistryData(district, devType, propType, onPage) {
-  const { transactions: allTransactions, oldestCovered, hitCap } = await fetchDistrictTransactions(district, onPage);
+  const { transactions: allTransactions, oldestCovered, hitCap, fromCache, fetchedAt } = await fetchDistrictTransactionsCached(district, onPage);
 
   // Filter by end-product property type: the dev type's forced type (conversions)
   // takes priority over the user-selected property type (refurb/new build).
@@ -642,7 +671,9 @@ async function fetchLandRegistryData(district, devType, propType, onPage) {
     allTransactions,
     filterSource: devForcedType ? 'devType' : (propTypeFilter ? 'propType' : null),
     oldestCovered,
-    hitCap
+    hitCap,
+    fromCache,
+    fetchedAt
   };
 }
 
@@ -734,6 +765,14 @@ function renderGdvExplainer(a) {
     compsLine = `${a.compCount} sold comp${a.compCount === 1 ? '' : 's'} in the last 12 months`;
   }
 
+  // Re-running an appraisal on the same site (e.g. testing a different
+  // purchase price) reuses the district's comps from earlier in this
+  // session instead of re-fetching — see fetchDistrictTransactionsCached.
+  // Surfaced here so a suspiciously-instant second run has an explanation.
+  const cacheLine = a.usedCachedComps && a.compsFetchedAt
+    ? `<div><strong>Comps fetched:</strong> Reused from earlier this session (${a.compsFetchedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}), not re-fetched live</div>`
+    : '';
+
   // The price level above can be real comp data even when growth isn't —
   // growth needs a prior-year window to compare against, which is a
   // separate (stricter) bar than just having enough current-year comps.
@@ -749,6 +788,7 @@ function renderGdvExplainer(a) {
     <div><strong>Growth basis:</strong> ${escapeHtml(growthLine)}</div>
     <div><strong>District:</strong> ${escapeHtml(areaLabel)}</div>
     <div><strong>Multiplier:</strong> ${escapeHtml(multiplierLine)}</div>
+    ${cacheLine}
   `;
 }
 
@@ -1091,6 +1131,8 @@ async function runAppraisal() {
   let devTypePlanningIntel = null;
   let oldestCovered = null;
   let hitPageCap = false;
+  let usedCachedComps = false;
+  let compsFetchedAt = null;
 
   // Postcode → district + coordinates resolves once, up front, fast. Land
   // Registry, EPC, flood, conservation and planning intel all key off this
@@ -1131,6 +1173,8 @@ async function runAppraisal() {
     filterSource = lrOutcome.value.filterSource;
     oldestCovered = lrOutcome.value.oldestCovered;
     hitPageCap = lrOutcome.value.hitCap;
+    usedCachedComps = lrOutcome.value.fromCache;
+    compsFetchedAt = lrOutcome.value.fetchedAt;
   } else if (!usedFallback) {
     usedFallback = true;
     fallbackReason = 'The Land Registry API could not be reached. GDV and area statistics are based on regional averages, not live market data.';
@@ -1394,11 +1438,12 @@ async function runAppraisal() {
   }
 
   const gdvBasisLabel = usedFallback ? 'regional avg' : 'median';
-  document.getElementById('r-gdv-note').textContent = `${fmt(medianPrice)} ${gdvBasisLabel} × ${units} unit${units === 1 ? '' : 's'} × ${gdvMultiplier.toFixed(2)} = ${fmt(gdv)}`;
+  document.getElementById('r-gdv-note').textContent = `${fmt(medianPrice)} ${gdvBasisLabel} × ${units} unit${units === 1 ? '' : 's'} × ${gdvMultiplier.toFixed(2)} = ${fmt(gdv)}`
+    + (usedCachedComps ? ' · comps reused from earlier this session' : '');
 
   renderGdvExplainer({
     usedFallback, usedPropTypeFallback, growthIsFallback, district, postcode, region, devType, propType,
-    compCount: last12.length, propTypeFilteredCount, gdvMultiplier
+    compCount: last12.length, propTypeFilteredCount, gdvMultiplier, usedCachedComps, compsFetchedAt
   });
 
   renderBuildCostExplainer({
@@ -1515,23 +1560,35 @@ function buildDealSummary({ purchase, gdv, buildMid, rlv, margin, sdlt, bcis, us
 
   // Positive = % headroom on that lever alone before the deal fails.
   // Whichever is smaller is the one actually at risk of doing so first —
-  // same comparison the resilience headroom bars are built from. Margin
-  // >= 12 here guarantees both are >= 0, and either one can independently
-  // sit at exactly 0 while the other has real headroom, so "more than 0%"
-  // needs its own wording rather than falling through to the generic case.
+  // same comparison the resilience headroom bars are built from.
+  // computeResilience only tests in 10-point steps, so a lever testing to
+  // exactly 0 doesn't mean literally zero tolerance — it means "still
+  // viable at the base case, not at -10%" — the true breakeven is
+  // somewhere in that gap and isn't known precisely. Rather than invent a
+  // false-precision percentage (or the equally-wrong "any drop at all"),
+  // reuse the same "no buffer" framing the Deal Resilience card already
+  // uses for this exact state ("Base cost only — no overrun buffer" /
+  // "Base GDV only — no price drop buffer").
   const buildHeadroom = maxBuildOverrun;
   const gdvHeadroom = -maxGdvDrop;
-  let riskClause, riskIsPlural = false;
+  // Tracks whether the clause actually selected below used the "no buffer"
+  // zero-wording — not just whether both levers happen to be zero — so the
+  // viable branch can drop its "before this stops being viable" trailer
+  // exactly when it would otherwise read as a non sequitur.
+  let riskClause, riskIsPlural = false, riskIsZero = false;
   if (buildHeadroom <= 0 && gdvHeadroom <= 0) {
-    riskClause = 'any overrun on the build cost or any drop in the sale price';
+    riskClause = 'no overrun buffer on build costs and no price-drop buffer on the sale price';
     riskIsPlural = true;
+    riskIsZero = true;
   } else if (buildHeadroom < gdvHeadroom) {
-    riskClause = buildHeadroom <= 0
-      ? 'any overrun on the build cost'
+    riskIsZero = buildHeadroom <= 0;
+    riskClause = riskIsZero
+      ? 'no overrun buffer on build costs'
       : `build costs running more than ${Math.round(buildHeadroom * 100)}% over budget`;
   } else {
-    riskClause = gdvHeadroom <= 0
-      ? 'any drop in the sale price'
+    riskIsZero = gdvHeadroom <= 0;
+    riskClause = riskIsZero
+      ? 'no price-drop buffer on the sale price'
       : `the sale price coming in more than ${Math.round(gdvHeadroom * 100)}% below what's assumed`;
   }
 
@@ -1580,8 +1637,11 @@ function buildDealSummary({ purchase, gdv, buildMid, rlv, margin, sdlt, bcis, us
     }
   } else {
     headline = 'This works.';
+    // "no buffer" is already a present-tense state, not a future threshold —
+    // appending "before this stops being viable" to it reads as a non
+    // sequitur, so that trailer only applies to the percentage-based clause.
     detail = `You're buying at <strong>${fmt(purchase)}</strong> against a residual land value of <strong>${fmt(rlv)}</strong> — about <strong>${fmt(cushion)}</strong> of cushion at a 20% margin. `
-      + `The main risk is on execution, not the price: ${riskClause} before this stops being viable.`
+      + `The main risk is on execution, not the price: ${riskClause}${riskIsZero ? '' : ' before this stops being viable'}.`
       + dataCaveat;
   }
 
