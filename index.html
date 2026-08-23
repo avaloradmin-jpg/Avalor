@@ -1454,6 +1454,27 @@
             <input type="number" class="form-input" id="build-cost-override" min="0" placeholder="e.g. 185000"/>
           </div>
         </div>
+        <div style="margin-top:16px">
+          <label class="form-label">Development finance</label>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);cursor:pointer">
+              <input type="radio" name="finance-mode" value="estimate" checked onchange="toggleFinanceOverride()"/>
+              Use estimate (6.5% of purchase + build cost)
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);cursor:pointer">
+              <input type="radio" name="finance-mode" value="custom" onchange="toggleFinanceOverride()"/>
+              Enter my own rate
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);cursor:pointer">
+              <input type="radio" name="finance-mode" value="none" onchange="toggleFinanceOverride()"/>
+              No finance — I'm funding this myself
+            </label>
+          </div>
+          <div id="finance-override-rate-field" style="display:none;margin-top:8px;max-width:260px">
+            <label class="form-label">Your finance rate (%, of purchase + build)</label>
+            <input type="number" class="form-input" id="finance-override-rate" min="0" step="0.1" placeholder="e.g. 5.5"/>
+          </div>
+        </div>
       </div>
 
       <!-- RESULTS (hidden until run) -->
@@ -1544,7 +1565,7 @@
                 </details>
               </div>
               <div class="metric-tile"><div class="metric-tile-label">SDLT</div><div class="metric-tile-value" id="r-sdlt">—</div><div class="metric-tile-sub" id="r-sdlt-note"></div></div>
-              <div class="metric-tile"><div class="metric-tile-label">Dev finance est.</div><div class="metric-tile-value" id="r-finance">—</div><div class="metric-tile-sub" id="r-finance-note"></div></div>
+              <div class="metric-tile"><div class="metric-tile-label">Dev finance est.</div><div class="metric-tile-value" id="r-finance">—</div><div class="metric-tile-sub" id="r-finance-basis-note"></div><div class="metric-tile-sub" id="r-finance-note"></div></div>
               <div class="metric-tile"><div class="metric-tile-label">Profit</div><div class="metric-tile-value" id="r-profit">—</div></div>
               <div class="metric-tile highlight"><div class="metric-tile-label">Profit on GDV</div><div class="metric-tile-value" id="r-margin">—</div></div>
             </div>

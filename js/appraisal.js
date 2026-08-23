@@ -220,6 +220,11 @@ function toggleBuildCostOverride() {
   document.getElementById('build-cost-override-field').style.display = checked ? '' : 'none';
 }
 
+function toggleFinanceOverride() {
+  const mode = document.querySelector('input[name="finance-mode"]:checked').value;
+  document.getElementById('finance-override-rate-field').style.display = mode === 'custom' ? '' : 'none';
+}
+
 // End-product property type for each dev type — used to filter comps.
 // Conversions always produce flats regardless of what "Property type" the
 // user selected, so this takes priority over PROP_TYPE_TO_PPD_TYPE below.
@@ -738,7 +743,10 @@ function getSdltNote(sdlt, purchase) {
   return `That's ${fmtPct(pct)} of your purchase price — cash due at completion, on top of your deposit and fees. Includes the 5% additional dwelling surcharge, which applies when you already own a property — one of the most commonly overlooked costs in development finance.`;
 }
 
-function getFinanceNote(finance, gdv) {
+function getFinanceNote(finance, gdv, financeMode) {
+  if (financeMode === 'none') {
+    return { cls: '', text: "No development finance — you're funding this yourself, so there's no interest cost eating into profit." };
+  }
   const pctOfGdv = gdv > 0 ? (finance / gdv) * 100 : 0;
   if (pctOfGdv > 6) {
     return { cls: 'warn', text: "That's a meaningful chunk of GDV — every month you cut from the build programme drops straight to profit." };
@@ -846,20 +854,21 @@ function renderRlvExplainer(a) {
     <div><strong>Less agent fees (1.5% of GDV):</strong> ${fmt(a.agentFees)}</div>
     <div><strong>Less professional fees (12% of build):</strong> ${fmt(a.profFees)}</div>
     <div><strong>Less contingency (10% of build):</strong> ${fmt(a.contingency)}</div>
-    <div><strong>Less finance:</strong> ${fmt(a.finance)}</div>
+    <div><strong>Less finance (on this value, not your purchase price):</strong> ${fmt(a.rlvFinance)}</div>
     <div><strong>Less profit reserve (20% of GDV):</strong> ${fmt(profitReserve)}</div>
     <div><strong>= Residual land value:</strong> ${fmt(a.rlv)}</div>
     <div>Excludes SDLT — that's a cost of the land purchase itself, not of delivering the scheme. Budget it separately on top of whatever you pay for the site.</div>
+    <div>Finance here is costed on the residual value itself, not on what you actually entered as your purchase price — otherwise this figure would move every time you changed that field. See the Dev finance tile above for your deal's real financing cost.</div>
   `;
 }
 
-function getMargin(gdv, buildMid, purchase, sdlt, gdvVar, buildVar) {
+function getMargin(gdv, buildMid, purchase, sdlt, gdvVar, buildVar, financeRate) {
   const g = gdv * (1 + gdvVar);
   const b = buildMid * (1 + buildVar);
   // Finance is recomputed from the varied build cost, not held at its base
   // value — a build overrun draws down more loan, so it should cost more
   // interest too. Matches computeWhatIf's handling of the same scenario.
-  const finance = (purchase + b) * 0.065;
+  const finance = (purchase + b) * financeRate;
   const agentFees = g * 0.015;
   const profFees = b * 0.12;
   const contingency = b * 0.10;
@@ -918,11 +927,16 @@ const CONSTRUCTION_BASE_BY_TYPE = {
   'New build':              45
 };
 
-function scoreConstructionRisk(devType, bcis, maxBuildOverrun) {
+// Deliberately independent of margin/purchase price — this describes the
+// build itself (devType complexity, BCIS estimate-range uncertainty), not
+// whether the deal has room to absorb an overrun. That's a financial
+// question, already covered by Deal Resilience and the Profitability
+// category; folding it in here would double-count margin across categories
+// and make "Construction Risk" move when nothing about the construction did.
+function scoreConstructionRisk(devType, bcis) {
   const base = CONSTRUCTION_BASE_BY_TYPE[devType] ?? 65;
   const uncertaintyPenalty = ((bcis.high - bcis.low) / bcis.mid) * 25;
-  const headroomBonus = (maxBuildOverrun ?? 0) * 100;
-  return clamp(base - uncertaintyPenalty + headroomBonus, 0, 100);
+  return clamp(base - uncertaintyPenalty, 0, 100);
 }
 
 function scoreMarketDemand(growth, compCount, usedFallback, growthIsFallback) {
@@ -955,21 +969,29 @@ function scoreExitStrategy(maxGdvDrop, rlv, purchase, epcResult) {
   return clamp(gdvScore * 0.45 + rlvScore * 0.25 + epcScore * 0.30, 0, 100);
 }
 
-function computeAvalorScore({ margin, rlv, purchase, growth, compCount, usedFallback, growthIsFallback, floodZone, planwireResult, conservationArea, devType, bcis, maxBuildOverrun, maxGdvDrop, epcResult }) {
+function computeAvalorScore({ margin, rlv, purchase, growth, compCount, usedFallback, growthIsFallback, floodZone, planwireResult, conservationArea, devType, bcis, maxGdvDrop, epcResult }) {
   const profitability = scoreProfitability(margin);
   const planningRisk = scorePlanningRisk(planwireResult, conservationArea, devType);
   const floodEnvironmental = scoreFloodEnvironmental(floodZone);
-  const constructionRisk = scoreConstructionRisk(devType, bcis, maxBuildOverrun);
+  const constructionRisk = scoreConstructionRisk(devType, bcis);
   const marketDemand = scoreMarketDemand(growth, compCount, usedFallback, growthIsFallback);
   const exitStrategy = scoreExitStrategy(maxGdvDrop, rlv, purchase, epcResult);
 
-  const overall =
+  let overall =
     profitability      * 0.30 +
     planningRisk       * 0.15 +
     floodEnvironmental * 0.15 +
     constructionRisk   * 0.15 +
     marketDemand        * 0.15 +
     exitStrategy        * 0.10;
+
+  // A not-viable margin can't be offset by strong non-financial categories —
+  // otherwise a deal that fails on profitability can still read as
+  // "Moderate, workable" overall, which is exactly backwards. The category
+  // breakdown below stays uncapped, since planning/flood/construction/etc.
+  // are still genuinely true and useful to see on a bad deal; only the
+  // single headline number is capped.
+  if (margin < 12) overall = Math.min(overall, 40);
 
   return {
     overall: Math.round(overall),
@@ -999,7 +1021,7 @@ function scoreColor(score) {
   return '#A32D2D';
 }
 
-function renderAvalorScore(scoreResult) {
+function renderAvalorScore(scoreResult, margin) {
   const { overall, categories } = scoreResult;
   const color = scoreColor(overall);
 
@@ -1011,7 +1033,13 @@ function renderAvalorScore(scoreResult) {
   const band = document.getElementById('score-band');
   const bandDesc = document.getElementById('score-band-desc');
   band.style.color = color;
-  if (overall >= 70) {
+  // Gated on the margin verdict directly, not just inferred from the
+  // (already-capped) number — a not-viable deal must never read as
+  // "workable" regardless of how the categories below happen to net out.
+  if (margin < 12) {
+    band.textContent = 'Not viable';
+    bandDesc.textContent = "Margin doesn't clear the 12% viability threshold — no combination of the categories below changes that. Fix the price before anything else.";
+  } else if (overall >= 70) {
     band.textContent = 'Strong deal';
     bandDesc.textContent = 'Scores well across profitability and risk factors, with limited exposure across the categories below.';
   } else if (overall >= 50) {
@@ -1061,6 +1089,8 @@ async function runAppraisal() {
     : 1;
   const buildCostOverrideEnabled = document.getElementById('build-cost-override-toggle').checked;
   const buildCostOverrideRaw = parseFloat(document.getElementById('build-cost-override').value);
+  const financeMode = document.querySelector('input[name="finance-mode"]:checked').value;
+  const financeOverrideRateRaw = parseFloat(document.getElementById('finance-override-rate').value);
 
   if (!postcodeRaw) {
     toast('Please enter a postcode', 'error');
@@ -1069,6 +1099,11 @@ async function runAppraisal() {
 
   if (buildCostOverrideEnabled && !(buildCostOverrideRaw > 0)) {
     toast('Enter a valid build cost, or untick "Use my own build cost"', 'error');
+    return;
+  }
+
+  if (financeMode === 'custom' && !(financeOverrideRateRaw >= 0)) {
+    toast('Enter a valid finance rate, or choose a different finance option', 'error');
     return;
   }
 
@@ -1353,11 +1388,17 @@ async function runAppraisal() {
   const usedBuildCostOverride = buildCostOverrideEnabled && buildCostOverrideRaw > 0;
   const buildMid = usedBuildCostOverride ? buildCostOverrideRaw : area * bcis.mid;
   const buildCostImpliedRate = usedBuildCostOverride ? buildMid / area : null;
+  // Estimate: flat 6.5% of purchase + build, same as before. Custom: the
+  // user's own all-in rate, applied the same way. None: a cash buyer has no
+  // financing cost to net off at all.
+  const financeRate = financeMode === 'custom' ? financeOverrideRateRaw / 100
+    : financeMode === 'none' ? 0
+    : 0.065;
   const sdlt = calcSDLT(purchase);
   const agentFees = gdv * 0.015;
   const profFees = buildMid * 0.12;
   const contingency = buildMid * 0.10;
-  const finance = (purchase + buildMid) * 0.065;
+  const finance = (purchase + buildMid) * financeRate;
   const totalCosts = purchase + buildMid + sdlt + agentFees + profFees + contingency + finance;
   const profit = gdv - totalCosts;
   const margin = (profit / gdv) * 100;
@@ -1376,13 +1417,20 @@ async function runAppraisal() {
   // is linear in price, so solve the fixed point p = rlv directly instead
   // of substituting the actual purchase.
   const rlvBeforeFinance = gdv - buildMid - (gdv * 0.20) - agentFees - profFees - contingency;
-  const rlv = (rlvBeforeFinance - buildMid * 0.065) / 1.065;
-  const resilience = computeResilience(gdv, buildMid, purchase, sdlt);
+  const rlv = (rlvBeforeFinance - buildMid * financeRate) / (1 + financeRate);
+  // The finance actually netted into RLV above — priced on RLV itself, not
+  // on whatever purchase price is currently in the box (see the note
+  // above). This is the figure the "how is this calculated?" breakdown
+  // must show, since it's the one the total was built from; the real
+  // per-purchase `finance` computed above will generally be a different
+  // number and would make that breakdown not sum to the RLV shown.
+  const rlvFinance = (rlv + buildMid) * financeRate;
+  const resilience = computeResilience(gdv, buildMid, purchase, sdlt, financeRate);
 
   const score = computeAvalorScore({
     margin, rlv, purchase, growth, compCount: last12.length, usedFallback, growthIsFallback,
     floodZone, planwireResult, conservationArea, devType, bcis,
-    maxBuildOverrun: resilience.maxBuildOverrun, maxGdvDrop: resilience.maxGdvDrop,
+    maxGdvDrop: resilience.maxGdvDrop,
     epcResult
   });
 
@@ -1392,6 +1440,7 @@ async function runAppraisal() {
     bcis, growth, growthIsFallback, ppm, compCount: last12.length, district, usedFallback,
     usedPropTypeFallback, propTypeFilteredCount,
     usedBuildCostOverride, buildCostImpliedRate,
+    financeMode, financeRate, financeOverrideRateRaw: financeMode === 'custom' ? financeOverrideRateRaw : null,
     epcResult, floodZone, planwireResult, conservationArea, article4Result, devTypePlanningIntel,
     maxBuildOverrun: resilience.maxBuildOverrun, maxGdvDrop: resilience.maxGdvDrop,
     score
@@ -1453,7 +1502,16 @@ async function runAppraisal() {
 
   document.getElementById('r-sdlt-note').textContent = getSdltNote(sdlt, purchase);
 
-  const financeNote = getFinanceNote(finance, gdv);
+  const financeBasisNoteEl = document.getElementById('r-finance-basis-note');
+  if (financeBasisNoteEl) {
+    financeBasisNoteEl.textContent = financeMode === 'none'
+      ? 'Self-funded — no finance rate applied.'
+      : financeMode === 'custom'
+        ? `Your rate — ${financeOverrideRateRaw}% of purchase + build.`
+        : 'Estimate — 6.5% of purchase + build.';
+  }
+
+  const financeNote = getFinanceNote(finance, gdv, financeMode);
   const financeNoteEl = document.getElementById('r-finance-note');
   financeNoteEl.className = 'metric-tile-sub' + (financeNote.cls ? ' ' + financeNote.cls : '');
   financeNoteEl.textContent = financeNote.text;
@@ -1463,7 +1521,7 @@ async function runAppraisal() {
   rlvNoteEl.className = 'metric-tile-sub' + (rlvNote.cls ? ' ' + rlvNote.cls : '');
   rlvNoteEl.textContent = rlvNote.text;
 
-  renderRlvExplainer({ gdv, buildMid, agentFees, profFees, contingency, finance, rlv });
+  renderRlvExplainer({ gdv, buildMid, agentFees, profFees, contingency, rlvFinance, rlv });
 
   // SDLT breakdown — split the real banded calculation at £250k so the rows sum to the actual total
   const bandedTo250k = calcSdltBanded(Math.min(purchase, 250000));
@@ -1509,7 +1567,7 @@ async function runAppraisal() {
   renderDealSummary(margin, dealSummary);
 
   buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, margin, resilience);
-  buildWhatIfSection(gdv, buildMid, purchase);
+  buildWhatIfSection(gdv, buildMid, purchase, financeRate);
   buildAreaSnapshot(postcode, district, region, {
     medianPrice: snapshotMedianPrice, growth: snapshotGrowth, chartGrowth: snapshotChartGrowth,
     usedFallback: snapshotUsedFallback,
@@ -1517,7 +1575,7 @@ async function runAppraisal() {
     isPartialWindow, bannerText: snapshotBannerText, typeBreakdown
   }, epcResult, floodZone, planwireResult, conservationArea, article4Result);
   buildDevTypePlanningCard(devTypePlanningIntel, devType);
-  renderAvalorScore(score);
+  renderAvalorScore(score, margin);
   buildMissedItemsSection(currentAppraisal);
 
   const growthWidth = Math.min(90, Math.max(10, (Math.abs(growth) / 10) * 100));
@@ -1592,6 +1650,24 @@ function buildDealSummary({ purchase, gdv, buildMid, rlv, margin, sdlt, bcis, us
       : `the sale price coming in more than ${Math.round(gdvHeadroom * 100)}% below what's assumed`;
   }
 
+  // riskClause above is a noun phrase, which reads fine spliced into "The
+  // main risk is X" (the marginal branches, below). The viable branch needs
+  // an actual conditional clause instead — welding "before this stops being
+  // viable" onto a noun phrase doesn't parse, there's no verb for "before"
+  // to attach to. Built separately here rather than reusing riskClause.
+  let viableRiskClause;
+  if (riskIsPlural) {
+    viableRiskClause = "there's no buffer left on build costs or the sale price — either could tip this out of viable range";
+  } else if (riskIsZero) {
+    viableRiskClause = buildHeadroom < gdvHeadroom
+      ? "there's no overrun buffer left on build costs — this is already at the edge of the viable range"
+      : "there's no price-drop buffer left on the sale price — this is already at the edge of the viable range";
+  } else {
+    viableRiskClause = buildHeadroom < gdvHeadroom
+      ? `this only tips out of viable range if build costs come in more than ${Math.round(buildHeadroom * 100)}% over budget`
+      : `this only tips out of viable range if the sale price comes in more than ${Math.round(gdvHeadroom * 100)}% below what's assumed`;
+  }
+
   // GDV — and everything derived from it here (RLV, target price, cushion)
   // — is a regional or unfiltered estimate whenever the comps fell back.
   // Every branch below leans on GDV, so the caveat has to travel with all of them.
@@ -1637,11 +1713,8 @@ function buildDealSummary({ purchase, gdv, buildMid, rlv, margin, sdlt, bcis, us
     }
   } else {
     headline = 'This works.';
-    // "no buffer" is already a present-tense state, not a future threshold —
-    // appending "before this stops being viable" to it reads as a non
-    // sequitur, so that trailer only applies to the percentage-based clause.
     detail = `You're buying at <strong>${fmt(purchase)}</strong> against a residual land value of <strong>${fmt(rlv)}</strong> — about <strong>${fmt(cushion)}</strong> of cushion at a 20% margin. `
-      + `The main risk is on execution, not the price: ${riskClause}${riskIsZero ? '' : ' before this stops being viable'}.`
+      + `The main risk is on execution, not the price: ${viableRiskClause}.`
       + dataCaveat;
   }
 
@@ -1669,7 +1742,7 @@ function renderDealSummary(margin, summary) {
   detail.innerHTML = summary.detail;
 }
 
-function computeResilience(gdv, buildMid, purchase, sdlt) {
+function computeResilience(gdv, buildMid, purchase, sdlt, financeRate) {
   // Best-case to worst-case order matters: each loop keeps overwriting its
   // result for as long as margin >= 12, so the last value it can still pass
   // on is the one that survives. buildVars runs low-cost -> high-cost (worst
@@ -1682,13 +1755,13 @@ function computeResilience(gdv, buildMid, purchase, sdlt) {
 
   let maxBuildOverrun = -0.20;
   for (const bv of buildVars) {
-    const m = getMargin(gdv, buildMid, purchase, sdlt, 0, bv);
+    const m = getMargin(gdv, buildMid, purchase, sdlt, 0, bv, financeRate);
     if (m >= 12) maxBuildOverrun = bv;
   }
 
   let maxGdvDrop = 0.20;
   for (const gv of gdvVars) {
-    const m = getMargin(gdv, buildMid, purchase, sdlt, gv, 0);
+    const m = getMargin(gdv, buildMid, purchase, sdlt, gv, 0, financeRate);
     if (m >= 12) maxGdvDrop = gv;
   }
 
@@ -1729,15 +1802,20 @@ function buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, baseMarg
   buildBar.style.width = Math.round(buildPct) + '%';
   gdvBar.style.width = Math.round(gdvPct) + '%';
 
+  // "Fails" previously described this state, but the deal isn't
+  // necessarily loss-making here — it just doesn't clear the 12% viability
+  // bar even at the best tested case. Those are different claims, and
+  // conflating them reads as contradictory next to a genuinely positive
+  // profit figure elsewhere on the page.
   buildVal.textContent = maxBuildOverrun >= 0.20 ? 'Up to +20% overrun — still viable'
     : maxBuildOverrun >= 0.10 ? 'Up to +10% overrun — still viable'
     : maxBuildOverrun >= 0 ? 'Base cost only — no overrun buffer'
-    : 'Fails at base assumptions';
+    : 'Already below 12% target';
 
   gdvVal.textContent = maxGdvDrop <= -0.20 ? 'Survives up to -20% price drop'
     : maxGdvDrop <= -0.10 ? 'Survives up to -10% price drop'
     : maxGdvDrop <= 0 ? 'Base GDV only — no price drop buffer'
-    : 'Fails even at base GDV';
+    : 'Already below 12% target';
 }
 
 // --- What if...? interactive scenarios ---
@@ -1750,12 +1828,12 @@ function buildResilienceSection(gdv, buildMid, purchase, sdlt, finance, baseMarg
 let whatIfBase = null;
 
 function computeWhatIf(purchasePctLess, buildPctOver, gdvPctLess) {
-  const { gdv, buildMid, purchase } = whatIfBase;
+  const { gdv, buildMid, purchase, financeRate } = whatIfBase;
   const newPurchase = purchase * (1 - purchasePctLess / 100);
   const newBuild = buildMid * (1 + buildPctOver / 100);
   const newGdv = gdv * (1 - gdvPctLess / 100);
   const newSdlt = calcSDLT(newPurchase);
-  const newFinance = (newPurchase + newBuild) * 0.065;
+  const newFinance = (newPurchase + newBuild) * financeRate;
   const agentFees = newGdv * 0.015;
   const profFees = newBuild * 0.12;
   const contingency = newBuild * 0.10;
@@ -1765,8 +1843,8 @@ function computeWhatIf(purchasePctLess, buildPctOver, gdvPctLess) {
   return { newPurchase, newBuild, newGdv, profit, margin };
 }
 
-function buildWhatIfSection(gdv, buildMid, purchase) {
-  whatIfBase = { gdv, buildMid, purchase };
+function buildWhatIfSection(gdv, buildMid, purchase, financeRate) {
+  whatIfBase = { gdv, buildMid, purchase, financeRate };
   document.getElementById('whatif-purchase').value = 0;
   document.getElementById('whatif-build').value = 0;
   document.getElementById('whatif-gdv').value = 0;
@@ -2229,12 +2307,15 @@ function computeMissedItems(a) {
     });
   }
 
-  // Finance is a flat rate that doesn't account for build programme length
-  if (LONG_BUILD_DEVTYPES.includes(a.devType)) {
+  // Finance is a flat rate that doesn't account for build programme length —
+  // doesn't apply at all to a self-funded deal, since there's no rate to
+  // second-guess.
+  if (LONG_BUILD_DEVTYPES.includes(a.devType) && a.financeMode !== 'none') {
+    const rateLabel = a.financeMode === 'custom' ? `your rate of ${a.financeOverrideRateRaw}%` : 'a flat 6.5%';
     items.push({
       severity: 'warn',
       title: 'Finance cost assumes a flat rate, regardless of build duration',
-      text: `Finance is calculated at a flat 6.5%, regardless of build duration. ${a.devType} schemes typically take significantly longer than a light refurbishment — if this build runs 12+ months, actual finance costs are likely higher than the ${fmt(a.finance)} shown.`
+      text: `Finance is calculated at ${rateLabel}, regardless of build duration. ${a.devType} schemes typically take significantly longer than a light refurbishment — if this build runs 12+ months, actual finance costs are likely higher than the ${fmt(a.finance)} shown.`
     });
   }
 
