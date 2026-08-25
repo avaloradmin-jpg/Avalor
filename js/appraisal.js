@@ -611,6 +611,10 @@ async function fetchDistrictTransactions(district, onPage) {
   // A genuine cap-out (page limit, time budget, or a later page failing
   // mid-stream) rather than the district simply running out of sales naturally.
   const hitCap = lastPageFull && (page >= PPD_MAX_PAGES || pageFailed || timedOut);
+  // A single-page cap-out means the whole appraisal rests on at most
+  // PPD_PAGE_SIZE transactions — much thinner than a multi-page fetch.
+  // Surfaced separately so the GDV note can flag it.
+  const thinFetch = hitCap && page === 1;
 
   const transactions = allItems.map(item => ({
     price: item.pricePaid,
@@ -623,7 +627,7 @@ async function fetchDistrictTransactions(district, onPage) {
     ? new Date(Math.min(...transactions.map(t => t.date.getTime())))
     : null;
 
-  return { transactions, oldestCovered, hitCap };
+  return { transactions, oldestCovered, hitCap, thinFetch };
 }
 
 // District-wide sales are independent of devType/propType — those are
@@ -660,7 +664,7 @@ async function fetchDistrictTransactionsCached(district, onPage) {
 // one shared paginated fetch — so the snapshot's "All types" figure can never
 // again be a devType-filtered median wearing the wrong label.
 async function fetchLandRegistryData(district, devType, propType, onPage) {
-  const { transactions: allTransactions, oldestCovered, hitCap, fromCache, fetchedAt } = await fetchDistrictTransactionsCached(district, onPage);
+  const { transactions: allTransactions, oldestCovered, hitCap, thinFetch, fromCache, fetchedAt } = await fetchDistrictTransactionsCached(district, onPage);
 
   // Filter by end-product property type: the dev type's forced type (conversions)
   // takes priority over the user-selected property type (refurb/new build).
@@ -677,6 +681,7 @@ async function fetchLandRegistryData(district, devType, propType, onPage) {
     filterSource: devForcedType ? 'devType' : (propTypeFilter ? 'propType' : null),
     oldestCovered,
     hitCap,
+    thinFetch,
     fromCache,
     fetchedAt
   };
@@ -731,7 +736,7 @@ function getRlvNote(rlv, purchase) {
   const cushion = purchase > 0 ? (rlv - purchase) / purchase : 0;
   if (cushion >= 0.10) {
     return { cls: '', text: "You're paying comfortably below what the site can support at a healthy margin — there's cushion here if costs run over." };
-  } else if (cushion >= -0.05) {
+  } else if (cushion >= 0) {
     return { cls: '', text: "You're paying close to what this site is actually worth at a healthy margin — little room left to renegotiate." };
   } else {
     return { cls: 'risk', text: "You're paying more than the residual value supports — this is what's compressing your margin, not the build cost." };
@@ -1166,6 +1171,7 @@ async function runAppraisal() {
   let devTypePlanningIntel = null;
   let oldestCovered = null;
   let hitPageCap = false;
+  let thinPageFetch = false;
   let usedCachedComps = false;
   let compsFetchedAt = null;
 
@@ -1208,6 +1214,7 @@ async function runAppraisal() {
     filterSource = lrOutcome.value.filterSource;
     oldestCovered = lrOutcome.value.oldestCovered;
     hitPageCap = lrOutcome.value.hitCap;
+    thinPageFetch = lrOutcome.value.thinFetch;
     usedCachedComps = lrOutcome.value.fromCache;
     compsFetchedAt = lrOutcome.value.fetchedAt;
   } else if (!usedFallback) {
@@ -1246,7 +1253,7 @@ async function runAppraisal() {
   // If filtering to the selected property type left too few comps, fall back to the
   // unfiltered district data (still real, still local) rather than jumping straight
   // to the regional £/sqm fallback.
-  if (!usedFallback && filterSource === 'propType' && last12.length < 5) {
+  if (!usedFallback && filterSource === 'propType' && last12.length < 15) {
     propTypeFilteredCount = last12.length;
     const allLast12 = allComps.filter(t => t.date >= twelveMonthsAgo);
     if (allLast12.length >= 5) {
@@ -1487,8 +1494,18 @@ async function runAppraisal() {
   }
 
   const gdvBasisLabel = usedFallback ? 'regional avg' : 'median';
-  document.getElementById('r-gdv-note').textContent = `${fmt(medianPrice)} ${gdvBasisLabel} × ${units} unit${units === 1 ? '' : 's'} × ${gdvMultiplier.toFixed(2)} = ${fmt(gdv)}`
-    + (usedCachedComps ? ' · comps reused from earlier this session' : '');
+  const gdvNoteEl = document.getElementById('r-gdv-note');
+  let gdvNoteText = `${fmt(medianPrice)} ${gdvBasisLabel} × ${units} unit${units === 1 ? '' : 's'} × ${gdvMultiplier.toFixed(2)} = ${fmt(gdv)}`;
+  if (!usedFallback) {
+    const compCount = last12.length;
+    const compLabel = usedPropTypeFallback
+      ? `${compCount} comps (all types — only ${propTypeFilteredCount} ${(propType || '').toLowerCase()} found)`
+      : `${compCount} comp${compCount === 1 ? '' : 's'}`;
+    const thinFlag = thinPageFetch ? ' · partial data, high-volume district' : (compCount < 15 ? ' · low comp count' : '');
+    gdvNoteText += ` · ${compLabel}${thinFlag}`;
+  }
+  if (usedCachedComps) gdvNoteText += ' · comps reused from earlier this session';
+  gdvNoteEl.textContent = gdvNoteText;
 
   renderGdvExplainer({
     usedFallback, usedPropTypeFallback, growthIsFallback, district, postcode, region, devType, propType,
@@ -1555,7 +1572,15 @@ async function runAppraisal() {
     verdictBox.className = 'verdict not-viable';
     verdictIcon.className = 'ti ti-circle-x';
     verdictTitle.textContent = 'Not viable';
-    verdictDesc.textContent = "At this price you're financing a loss, not a project. Renegotiate the purchase price before you spend anything on this deal.";
+    if (margin < 0) {
+      verdictDesc.textContent = financeMode === 'none'
+        ? "This deal runs at a loss — costs and fees outweigh what the finished scheme will sell for. Renegotiate the purchase price before committing."
+        : "At this price you're financing a loss, not a project. Renegotiate the purchase price before you spend anything on this deal.";
+    } else {
+      verdictDesc.textContent = financeMode === 'none'
+        ? "The margin is too thin to be viable — under 12%, there's not enough cushion to absorb anything going wrong. Renegotiate the purchase price before committing."
+        : "The margin is too thin to be viable — under 12%, the return barely justifies the development finance risk. Renegotiate the purchase price before committing.";
+    }
     marginEl.style.color = 'var(--red)';
   }
 
@@ -1712,10 +1737,16 @@ function buildDealSummary({ purchase, gdv, buildMid, rlv, margin, sdlt, bcis, us
         + dataCaveat;
     }
   } else {
-    headline = 'This works.';
-    detail = `You're buying at <strong>${fmt(purchase)}</strong> against a residual land value of <strong>${fmt(rlv)}</strong> — about <strong>${fmt(cushion)}</strong> of cushion at a 20% margin. `
-      + `The main risk is on execution, not the price: ${viableRiskClause}.`
-      + dataCaveat;
+    if (riskIsZero || riskIsPlural) {
+      headline = 'This works, but watch the headroom.';
+      detail = `You're buying at <strong>${fmt(purchase)}</strong> against a residual land value of <strong>${fmt(rlv)}</strong> — the price stacks up at a ${fmtPct(margin)} margin, but ${viableRiskClause}.`
+        + dataCaveat;
+    } else {
+      headline = 'This works.';
+      detail = `You're buying at <strong>${fmt(purchase)}</strong> against a residual land value of <strong>${fmt(rlv)}</strong> — about <strong>${fmt(cushion)}</strong> of cushion at a 20% margin. `
+        + `The main risk is on execution, not the price: ${viableRiskClause}.`
+        + dataCaveat;
+    }
   }
 
   return { headline, detail };
