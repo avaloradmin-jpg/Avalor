@@ -478,31 +478,33 @@ async function manageSubscription() {
 // ─── ONBOARDING ──────────────────────────────────────────────────────────────
 
 // Retroactively marks steps done from real usage evidence, for accounts whose
-// onboardingSteps flags never got set (see the call site in launchApp). Two or
-// more saved deals is also treated as evidence for "compare two deals" — the
-// two deals it takes to use that feature already exist, and an account with
-// that much real history shouldn't keep being shown a "let's get started"
-// checklist regardless of whether they clicked into Compare specifically.
+// onboardingSteps flags never got set (see the call site in launchApp).
+// Deliberately not using { count: 'exact', head: true } — that sends a HEAD
+// request and reads the count off a response header, which is the kind of
+// thing that silently comes back null through some proxy/CDN paths instead
+// of erroring, and a null count read as "0 deals" here (via `if (!count)
+// return`) is exactly how this went quiet for a real established account.
+// A plain select+limit(1) only needs the response body, so there's no header
+// path to lose. Any saved deal at all means the account is established —
+// full stop, not just steps 1 and 2 — since "compare two deals" isn't a
+// meaningful gate to keep dangling in front of an existing user who's
+// already gotten real value from the product.
 async function backfillOnboardingFromUsage() {
   if (!currentUser) return;
   if (onboardingSteps[1] && onboardingSteps[2] && onboardingSteps[3]) return;
 
-  const { count } = await sb
+  const { data, error } = await sb
     .from('saved_deals')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', currentUser.id);
+    .select('id')
+    .eq('user_id', currentUser.id)
+    .limit(1);
 
-  if (!count) return;
+  if (error || !data || !data.length) return;
 
-  const before = JSON.stringify(onboardingSteps);
-  if (count >= 1) { onboardingSteps[1] = true; onboardingSteps[2] = true; }
-  if (count >= 2) { onboardingSteps[3] = true; }
-
-  if (JSON.stringify(onboardingSteps) !== before) {
-    await sb.from('profiles').update({
-      onboarding_steps: JSON.stringify(onboardingSteps)
-    }).eq('id', currentUser.id);
-  }
+  onboardingSteps = { 1: true, 2: true, 3: true };
+  await sb.from('profiles').update({
+    onboarding_steps: JSON.stringify(onboardingSteps)
+  }).eq('id', currentUser.id);
 }
 
 function markOnboardingStep(step) {

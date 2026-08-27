@@ -1691,11 +1691,11 @@ function buildDealSummary({ purchase, gdv, buildMid, rlv, margin, sdlt, bcis, us
   // to attach to. Built separately here rather than reusing riskClause.
   let viableRiskClause;
   if (riskIsPlural) {
-    viableRiskClause = "there's no buffer left on build costs or the sale price — either could tip this out of viable range";
+    viableRiskClause = "there's no buffer left on build costs or the sale price, and either could tip this out of viable range";
   } else if (riskIsZero) {
     viableRiskClause = buildHeadroom < gdvHeadroom
-      ? "there's no overrun buffer left on build costs — this is already at the edge of the viable range"
-      : "there's no price-drop buffer left on the sale price — this is already at the edge of the viable range";
+      ? "there's no overrun buffer left on build costs, already at the edge of the viable range"
+      : "there's no price-drop buffer left on the sale price, already at the edge of the viable range";
   } else {
     viableRiskClause = buildHeadroom < gdvHeadroom
       ? `this only tips out of viable range if build costs come in more than ${Math.round(buildHeadroom * 100)}% over budget`
@@ -1748,7 +1748,7 @@ function buildDealSummary({ purchase, gdv, buildMid, rlv, margin, sdlt, bcis, us
   } else {
     if (riskIsZero || riskIsPlural) {
       headline = 'This works, but watch the headroom.';
-      detail = `You're buying at <strong>${fmt(purchase)}</strong> against a residual land value of <strong>${fmt(rlv)}</strong> — the price stacks up at a ${fmtPct(margin)} margin, but ${viableRiskClause}.`
+      detail = `You're buying at <strong>${fmt(purchase)}</strong> against a residual land value of <strong>${fmt(rlv)}</strong>, with the price stacking up at a ${fmtPct(margin)} margin. But ${viableRiskClause}.`
         + dataCaveat;
     } else {
       headline = 'This works.';
