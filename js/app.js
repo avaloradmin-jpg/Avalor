@@ -499,12 +499,19 @@ async function backfillOnboardingFromUsage() {
     .eq('user_id', currentUser.id)
     .limit(1);
 
-  if (error || !data || !data.length) return;
+  // Both failure modes were previously silent (an RLS/network error and a
+  // genuinely-empty result both just fell through the same `return`) — this
+  // is the one queryable signal a user or future debugging session has for
+  // telling "the account really has no saved deals" apart from "the lookup
+  // itself failed," so it's logged rather than swallowed.
+  if (error) { console.error('[onboarding] saved_deals lookup failed:', error); return; }
+  if (!data || !data.length) return;
 
   onboardingSteps = { 1: true, 2: true, 3: true };
-  await sb.from('profiles').update({
+  const { error: updateError } = await sb.from('profiles').update({
     onboarding_steps: JSON.stringify(onboardingSteps)
   }).eq('id', currentUser.id);
+  if (updateError) console.error('[onboarding] failed to persist backfilled steps:', updateError);
 }
 
 function markOnboardingStep(step) {

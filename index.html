@@ -2033,11 +2033,17 @@
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <!-- SCRIPTS -->
+<!-- No build step / bundler here, so these are plain static files with no
+     content hash in their URL — without a cache-busting query string, a
+     browser (or Vercel's edge cache) that already has js/app.js cached can
+     keep serving a stale copy across deploys indefinitely, silently masking
+     fixes landed in it. Bump ?v= on every deploy that touches any of these
+     files. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabase.js"></script>
-<script src="js/appraisal.js"></script>
-<script src="js/deals.js"></script>
-<script src="js/app.js"></script>
+<script src="js/supabase.js?v=20260827d"></script>
+<script src="js/appraisal.js?v=20260827d"></script>
+<script src="js/deals.js?v=20260827d"></script>
+<script src="js/app.js?v=20260827d"></script>
 
 </body>
 </html>
