@@ -326,8 +326,18 @@ async function launchApp() {
       // Load onboarding progress
       if (profile.onboarding_steps) {
         onboardingSteps = JSON.parse(profile.onboarding_steps);
-        updateOnboardingUI();
       }
+      // profile.onboarding_steps only gets written by markOnboardingStep,
+      // triggered from actions taken *this session* — an established account
+      // (pre-dating this column, or that did all its saving/appraising in
+      // earlier sessions before this tracking existed) can have real saved
+      // deals and still show onboardingSteps all-false forever, since
+      // nothing ever retroactively marked them done. Backfill from the one
+      // source of truth that can't lie: how many deals they've actually
+      // saved. Saving a deal requires having run an appraisal first, so a
+      // saved_deals count also implies step 1.
+      await backfillOnboardingFromUsage();
+      updateOnboardingUI();
     } else {
       document.getElementById('app').style.display = 'block';
     }
@@ -466,6 +476,34 @@ async function manageSubscription() {
 })()
 
 // ─── ONBOARDING ──────────────────────────────────────────────────────────────
+
+// Retroactively marks steps done from real usage evidence, for accounts whose
+// onboardingSteps flags never got set (see the call site in launchApp). Two or
+// more saved deals is also treated as evidence for "compare two deals" — the
+// two deals it takes to use that feature already exist, and an account with
+// that much real history shouldn't keep being shown a "let's get started"
+// checklist regardless of whether they clicked into Compare specifically.
+async function backfillOnboardingFromUsage() {
+  if (!currentUser) return;
+  if (onboardingSteps[1] && onboardingSteps[2] && onboardingSteps[3]) return;
+
+  const { count } = await sb
+    .from('saved_deals')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', currentUser.id);
+
+  if (!count) return;
+
+  const before = JSON.stringify(onboardingSteps);
+  if (count >= 1) { onboardingSteps[1] = true; onboardingSteps[2] = true; }
+  if (count >= 2) { onboardingSteps[3] = true; }
+
+  if (JSON.stringify(onboardingSteps) !== before) {
+    await sb.from('profiles').update({
+      onboarding_steps: JSON.stringify(onboardingSteps)
+    }).eq('id', currentUser.id);
+  }
+}
 
 function markOnboardingStep(step) {
   onboardingSteps[step] = true;

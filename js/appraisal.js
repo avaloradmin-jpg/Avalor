@@ -974,7 +974,7 @@ function scoreExitStrategy(maxGdvDrop, rlv, purchase, epcResult) {
   return clamp(gdvScore * 0.45 + rlvScore * 0.25 + epcScore * 0.30, 0, 100);
 }
 
-function computeAvalorScore({ margin, rlv, purchase, growth, compCount, usedFallback, growthIsFallback, floodZone, planwireResult, conservationArea, devType, bcis, maxGdvDrop, epcResult }) {
+function computeAvalorScore({ margin, rlv, purchase, growth, compCount, usedFallback, growthIsFallback, floodZone, planwireResult, conservationArea, devType, bcis, maxBuildOverrun, maxGdvDrop, epcResult }) {
   const profitability = scoreProfitability(margin);
   const planningRisk = scorePlanningRisk(planwireResult, conservationArea, devType);
   const floodEnvironmental = scoreFloodEnvironmental(floodZone);
@@ -997,6 +997,15 @@ function computeAvalorScore({ margin, rlv, purchase, growth, compCount, usedFall
   // are still genuinely true and useful to see on a bad deal; only the
   // single headline number is capped.
   if (margin < 12) overall = Math.min(overall, 40);
+
+  // Same idea as the margin cap above: a deal with no overrun buffer on
+  // build costs or no price-drop buffer on the sale price (the exact state
+  // the Deal Resilience card calls "viable but tight") can't read as a
+  // "Strong deal" just because the other categories net out well — that
+  // reads as a straight contradiction next to the resilience card and the
+  // deal-summary verdict, both of which are already flagging it.
+  const zeroHeadroom = (maxBuildOverrun ?? 0) <= 0 || (maxGdvDrop ?? 0) >= 0;
+  if (margin >= 12 && zeroHeadroom) overall = Math.min(overall, 69);
 
   return {
     overall: Math.round(overall),
@@ -1437,7 +1446,7 @@ async function runAppraisal() {
   const score = computeAvalorScore({
     margin, rlv, purchase, growth, compCount: last12.length, usedFallback, growthIsFallback,
     floodZone, planwireResult, conservationArea, devType, bcis,
-    maxGdvDrop: resilience.maxGdvDrop,
+    maxBuildOverrun: resilience.maxBuildOverrun, maxGdvDrop: resilience.maxGdvDrop,
     epcResult
   });
 
@@ -1597,7 +1606,7 @@ async function runAppraisal() {
     medianPrice: snapshotMedianPrice, growth: snapshotGrowth, chartGrowth: snapshotChartGrowth,
     usedFallback: snapshotUsedFallback,
     txCount: snapshotLast12.length, windowLabel: snapshotWindowLabel,
-    isPartialWindow, bannerText: snapshotBannerText, typeBreakdown
+    isPartialWindow, hitPageCap, bannerText: snapshotBannerText, typeBreakdown
   }, epcResult, floodZone, planwireResult, conservationArea, article4Result);
   buildDevTypePlanningCard(devTypePlanningIntel, devType);
   renderAvalorScore(score, margin);
@@ -1719,7 +1728,7 @@ function buildDealSummary({ purchase, gdv, buildMid, rlv, margin, sdlt, bcis, us
     } else {
       detail = `You're paying <strong>${fmt(purchase)}</strong> — already at or below the <strong>${fmt(rlv)}</strong> this site supports at a 20% margin, so the purchase price isn't what's broken here`
         + (buildCostAlsoHigh ? `, though the ${fmt(buildMid)} build cost is also running high for the area` : '') + `. `
-        + `Stamp duty (<strong>${fmt(sdlt)}</strong>) and the rest of the acquisition costs are enough on their own to push this into a loss. `
+        + `Stamp duty (<strong>${fmt(sdlt)}</strong>) and the rest of the acquisition costs are enough on their own to pull this under the 12% viability target. `
         + `Renegotiating the price alone won't fix it — you'd need to cut those costs or find a stronger sale price too.`
         + dataCaveat;
     }
@@ -1727,13 +1736,13 @@ function buildDealSummary({ purchase, gdv, buildMid, rlv, margin, sdlt, bcis, us
     headline = 'This works, but only just.';
     if (payingAboveRlv) {
       detail = `At a ${fmtPct(margin)} margin, you're paying <strong>${fmt(purchase)}</strong> against a residual land value of <strong>${fmt(rlv)}</strong> — ${fmt(-cushion)} more than the site supports at a comfortable 20% margin. `
-        + `The main risk is ${riskClause} — ${riskIsPlural ? 'either alone' : 'that alone'} would be enough to tip this into loss. `
+        + `The main risk is ${riskClause} — ${riskIsPlural ? 'either alone' : 'that alone'} would be enough to tip this below the 12% viability target. `
         + `Getting closer to <strong>${fmt(targetPrice)}</strong> would buy you real cushion, rather than relying on nothing going wrong.`
         + dataCaveat;
     } else {
       detail = `At a ${fmtPct(margin)} margin, you're paying <strong>${fmt(purchase)}</strong> — already at or below the <strong>${fmt(rlv)}</strong> this site supports at a 20% margin, so the price itself isn't holding this back. `
         + `Stamp duty (<strong>${fmt(sdlt)}</strong>) and the other acquisition costs on top are enough on their own to pull the margin under 20%. `
-        + `The main risk from here is ${riskClause} — ${riskIsPlural ? 'either' : 'that'} would tip it further into the red.`
+        + `The main risk from here is ${riskClause} — ${riskIsPlural ? 'either' : 'that'} would tip it below the 12% viability target.`
         + dataCaveat;
     }
   } else {
@@ -1952,7 +1961,12 @@ function buildAreaSnapshot(postcode, district, region, snap, epcResult, floodZon
   // Metrics tiles — sourced from the district-wide, unfiltered comp pool
   // (snap), independent of whatever devType/propType this deal is using.
   document.getElementById('snap-avg').textContent = snap.usedFallback ? 'Insufficient data' : fmt(snap.medianPrice);
-  document.getElementById('snap-tx').textContent = snap.txCount.toString();
+  // A partial window caused by hitting the pagination cap (as opposed to a
+  // district that genuinely has less than 12 months of data available)
+  // means txCount is exactly where the fetch stopped, not the true number
+  // of sales in the window — mark it as a floor, not a total.
+  document.getElementById('snap-tx').textContent = snap.txCount.toString()
+    + (snap.isPartialWindow && snap.hitPageCap ? '+' : '');
   document.getElementById('snap-growth').textContent = (snap.usedFallback || snap.growth === null)
     ? '—'
     : (snap.growth >= 0 ? '+' : '') + snap.growth.toFixed(1) + '%';
@@ -2114,6 +2128,15 @@ function buildAreaSnapshot(postcode, district, region, snap, epcResult, floodZon
     const prices = years.map((y, i) => Math.round(snap.medianPrice * Math.pow(1 - annualRate, 4 - i)));
     const maxP = Math.max(...prices);
     let barsHtml = '';
+    // snap.growth is only null here when there weren't enough prior-year
+    // comps for a real YoY figure (see growthComparable) — the growth tile
+    // above already shows a dash for that. chartGrowth still falls back to
+    // the regional trend constant so the chart isn't just blank, but that
+    // means every year in it is modelled, not measured, and has to say so
+    // rather than sitting next to a dash looking like real history.
+    if (snap.growth === null) {
+      barsHtml += `<div class="metric-tile-sub">Modelled using the regional trend rate, not local sales data — the growth figure above couldn't be measured directly.</div>`;
+    }
     years.forEach((y, i) => {
       const pct = Math.round((prices[i] / maxP) * 78);
       const inside = pct > 28;
