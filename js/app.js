@@ -262,7 +262,8 @@ async function launchApp() {
 
   // Load profile
   if (currentUser) {
-    const { data: profile } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
+    const { data: profile, error: profileError } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
+    if (profileError) console.error('[onboarding] profile fetch failed, skipping backfill:', profileError);
 
     if (profile) {
       // Normalize once — a plan value that isn't an exact 'trial'/'essential'/'professional'
@@ -490,6 +491,7 @@ async function manageSubscription() {
 // meaningful gate to keep dangling in front of an existing user who's
 // already gotten real value from the product.
 async function backfillOnboardingFromUsage() {
+  console.log('[onboarding] backfillOnboardingFromUsage called', { currentUser: !!currentUser, onboardingSteps });
   if (!currentUser) return;
   if (onboardingSteps[1] && onboardingSteps[2] && onboardingSteps[3]) return;
 
@@ -527,6 +529,15 @@ function markOnboardingStep(step) {
 }
 
 function updateOnboardingUI() {
+  // A paying customer doesn't need a getting-started checklist regardless of
+  // what the onboarding_steps flags say — sidesteps the whole backfill-flag
+  // saga for anyone who isn't on trial.
+  if (currentPlan !== 'trial') {
+    const card = document.getElementById('onboarding-card');
+    if (card) card.style.display = 'none';
+    return;
+  }
+
   const allDone = onboardingSteps[1] && onboardingSteps[2] && onboardingSteps[3];
 
   if (allDone) {
