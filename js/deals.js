@@ -327,6 +327,8 @@ async function loadCompare() {
   };
   const buildCostLabel = (deal) =>
     `${f(deal.build_cost)}${extraOf(deal).usedBuildCostOverride ? ' <span style="opacity:0.7;font-size:11px">(your estimate)</span>' : ''}`;
+  const gdvLabel = (deal) =>
+    `${f(deal.gdv)}${extraOf(deal).usedGdvOverride ? ' <span style="opacity:0.7;font-size:11px">(your estimate)</span>' : ''}`;
 
   container.innerHTML = `
     <table class="compare-table">
@@ -340,7 +342,7 @@ async function loadCompare() {
       </thead>
       <tbody>
         <tr class="compare-section-row"><th colspan="3">Financials</th></tr>
-        <tr><td class="compare-label-col">GDV</td><td class="compare-deal-col ${better(d1.gdv, d2.gdv)}">${f(d1.gdv)}</td><td class="compare-deal-col-2 ${better(d2.gdv, d1.gdv)}">${f(d2.gdv)}</td></tr>
+        <tr><td class="compare-label-col">GDV</td><td class="compare-deal-col ${better(d1.gdv, d2.gdv)}">${gdvLabel(d1)}</td><td class="compare-deal-col-2 ${better(d2.gdv, d1.gdv)}">${gdvLabel(d2)}</td></tr>
         <tr><td class="compare-label-col">Build cost</td><td class="compare-deal-col ${better(d1.build_cost, d2.build_cost, false)}">${buildCostLabel(d1)}</td><td class="compare-deal-col-2 ${better(d2.build_cost, d1.build_cost, false)}">${buildCostLabel(d2)}</td></tr>
         <tr><td class="compare-label-col">SDLT</td><td class="compare-deal-col ${better(d1.sdlt, d2.sdlt, false)}">${f(d1.sdlt)}</td><td class="compare-deal-col-2 ${better(d2.sdlt, d1.sdlt, false)}">${f(d2.sdlt)}</td></tr>
         <tr><td class="compare-label-col">Profit</td><td class="compare-deal-col ${better(d1.profit, d2.profit)}">${f(d1.profit)}</td><td class="compare-deal-col-2 ${better(d2.profit, d1.profit)}">${f(d2.profit)}</td></tr>

@@ -220,6 +220,11 @@ function toggleBuildCostOverride() {
   document.getElementById('build-cost-override-field').style.display = checked ? '' : 'none';
 }
 
+function toggleGdvOverride() {
+  const checked = document.getElementById('gdv-override-toggle').checked;
+  document.getElementById('gdv-override-field').style.display = checked ? '' : 'none';
+}
+
 function toggleFinanceOverride() {
   const mode = document.querySelector('input[name="finance-mode"]:checked').value;
   document.getElementById('finance-override-rate-field').style.display = mode === 'custom' ? '' : 'none';
@@ -313,12 +318,12 @@ const MIN_RELIABLE_GROWTH_COMPS = 8;
 // windows within this ratio of each other before trusting a growth figure.
 const MAX_GROWTH_COMP_RATIO = 3;
 
-// How far a custom build cost's implied £/m² can sit outside the BCIS
-// low–high range before it's flagged in Missed Items — wide enough that a
-// real quote which is simply different from a national benchmark isn't
-// nagged, tight enough to catch a genuine error (fees folded in, a missing
-// digit, wrong units).
-const BUILD_COST_OVERRIDE_FLAG_THRESHOLD = 0.25;
+// How far a custom figure (build cost £/m², or GDV) can sit outside its
+// benchmark before it's flagged in Missed Items — wide enough that a real
+// quote/valuation which is simply different from a national or district
+// benchmark isn't nagged, tight enough to catch a genuine error (fees folded
+// in, a missing digit, wrong units). Shared by both override checks.
+const OVERRIDE_FLAG_THRESHOLD = 0.25;
 
 function growthComparable(lastCount, priorCount) {
   if (lastCount < MIN_RELIABLE_GROWTH_COMPS || priorCount < MIN_RELIABLE_GROWTH_COMPS) return false;
@@ -786,6 +791,23 @@ function renderGdvExplainer(a) {
     ? `<div><strong>Comps fetched:</strong> Reused from earlier this session (${a.compsFetchedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}), not re-fetched live</div>`
     : '';
 
+  // A custom sale value replaces the district median as the input to the
+  // calculation, but the median is still shown for comparison — region-
+  // adjusted comps went into it the same as if it were driving the number —
+  // so the user can see how their own figure stacks up against what it's
+  // replacing. Same pattern as the build cost override explainer.
+  if (a.usedGdvOverride) {
+    const medianLabelCap = a.gdvMedianLabel[0].toUpperCase() + a.gdvMedianLabel.slice(1);
+    el.innerHTML = `
+      <div><strong>Data source:</strong> Your own estimate — not Land Registry-derived</div>
+      <div><strong>Figure used:</strong> ${fmt(a.gdv)}</div>
+      <div><strong>${escapeHtml(medianLabelCap)}, for comparison:</strong> ${fmt(a.gdvComputed)} (${escapeHtml(compsLine)})</div>
+      <div><strong>District:</strong> ${escapeHtml(areaLabel)}</div>
+      <div>No development-type multiplier applied to your own figure — it's used exactly as entered.</div>
+    `;
+    return;
+  }
+
   // The price level above can be real comp data even when growth isn't —
   // growth needs a prior-year window to compare against, which is a
   // separate (stricter) bar than just having enough current-year comps.
@@ -1103,6 +1125,8 @@ async function runAppraisal() {
     : 1;
   const buildCostOverrideEnabled = document.getElementById('build-cost-override-toggle').checked;
   const buildCostOverrideRaw = parseFloat(document.getElementById('build-cost-override').value);
+  const gdvOverrideEnabled = document.getElementById('gdv-override-toggle').checked;
+  const gdvOverrideRaw = parseFloat(document.getElementById('gdv-override').value);
   const financeMode = document.querySelector('input[name="finance-mode"]:checked').value;
   const financeOverrideRateRaw = parseFloat(document.getElementById('finance-override-rate').value);
 
@@ -1113,6 +1137,11 @@ async function runAppraisal() {
 
   if (buildCostOverrideEnabled && !(buildCostOverrideRaw > 0)) {
     toast('Enter a valid build cost, or untick "Use my own build cost"', 'error');
+    return;
+  }
+
+  if (gdvOverrideEnabled && !(gdvOverrideRaw > 0)) {
+    toast('Enter a valid GDV, or untick "Use my own sale value"', 'error');
     return;
   }
 
@@ -1396,7 +1425,14 @@ async function runAppraisal() {
 
   // GDV: median comp × units × dev-type multiplier (see GDV_MULTIPLIER above)
   const gdvMultiplier = GDV_MULTIPLIER[devType] ?? 0.85;
-  const gdv = medianPrice * units * gdvMultiplier;
+  const gdvComputed = medianPrice * units * gdvMultiplier;
+
+  // A custom figure is used exactly as entered — no dev-type multiplier, no
+  // Land Registry comp involved at all. gdvComputed stays around purely as
+  // the district median to compare it against, not as an input to it — same
+  // pattern as the build cost override below.
+  const usedGdvOverride = gdvOverrideEnabled && gdvOverrideRaw > 0;
+  const gdv = usedGdvOverride ? gdvOverrideRaw : gdvComputed;
 
   // A custom figure is used exactly as entered — no region multiplier, no
   // BCIS rate involved at all. bcis (region-adjusted) stays around purely as
@@ -1452,9 +1488,10 @@ async function runAppraisal() {
 
   currentAppraisal = {
     postcode, devType, propType, region, purchase, area, units,
-    gdv, gdvMultiplier, medianPrice, buildMid, sdlt, finance, profit, margin, rlv,
+    gdv, gdvComputed, gdvMultiplier, medianPrice, buildMid, sdlt, finance, profit, margin, rlv,
     bcis, growth, growthIsFallback, ppm, compCount: last12.length, district, usedFallback,
     usedPropTypeFallback, propTypeFilteredCount,
+    usedGdvOverride,
     usedBuildCostOverride, buildCostImpliedRate,
     financeMode, financeRate, financeOverrideRateRaw: financeMode === 'custom' ? financeOverrideRateRaw : null,
     epcResult, floodZone, planwireResult, conservationArea, article4Result, devTypePlanningIntel,
@@ -1503,22 +1540,39 @@ async function runAppraisal() {
   }
 
   const gdvBasisLabel = usedFallback ? 'regional avg' : 'median';
+  const gdvMedianLabel = usedFallback ? 'regional average' : 'district median';
   const gdvNoteEl = document.getElementById('r-gdv-note');
-  let gdvNoteText = `${fmt(medianPrice)} ${gdvBasisLabel} × ${units} unit${units === 1 ? '' : 's'} × ${gdvMultiplier.toFixed(2)} = ${fmt(gdv)}`;
-  if (!usedFallback) {
-    const compCount = last12.length;
-    const compLabel = usedPropTypeFallback
-      ? `${compCount} comps (all types — only ${propTypeFilteredCount} ${(propType || '').toLowerCase()} found)`
-      : `${compCount} comp${compCount === 1 ? '' : 's'}`;
-    const thinFlag = thinPageFetch ? ' · partial data, high-volume district' : (compCount < 15 ? ' · low comp count' : '');
-    gdvNoteText += ` · ${compLabel}${thinFlag}`;
+  const gdvBasisNoteEl = document.getElementById('r-gdv-basis-note');
+
+  // A custom sale value replaces the district median as the input to the
+  // calculation, but the median is still shown alongside for comparison —
+  // same pattern as the build cost override above.
+  if (usedGdvOverride) {
+    gdvNoteEl.textContent = 'Your estimate — used instead of the calculated figure below';
+    if (gdvBasisNoteEl) {
+      const diffPct = Math.round(((gdv - gdvComputed) / gdvComputed) * 100);
+      const diffLabel = diffPct === 0 ? 'in line with it' : diffPct > 0 ? `${diffPct}% above it` : `${Math.abs(diffPct)}% below it`;
+      gdvBasisNoteEl.textContent = `${gdvMedianLabel[0].toUpperCase()}${gdvMedianLabel.slice(1)}, for comparison: ${fmt(gdvComputed)} — your estimate is ${diffLabel}`;
+    }
+  } else {
+    let gdvNoteText = `${fmt(medianPrice)} ${gdvBasisLabel} × ${units} unit${units === 1 ? '' : 's'} × ${gdvMultiplier.toFixed(2)} = ${fmt(gdv)}`;
+    if (!usedFallback) {
+      const compCount = last12.length;
+      const compLabel = usedPropTypeFallback
+        ? `${compCount} comps (all types — only ${propTypeFilteredCount} ${(propType || '').toLowerCase()} found)`
+        : `${compCount} comp${compCount === 1 ? '' : 's'}`;
+      const thinFlag = thinPageFetch ? ' · partial data, high-volume district' : (compCount < 15 ? ' · low comp count' : '');
+      gdvNoteText += ` · ${compLabel}${thinFlag}`;
+    }
+    if (usedCachedComps) gdvNoteText += ' · comps reused from earlier this session';
+    gdvNoteEl.textContent = gdvNoteText;
+    if (gdvBasisNoteEl) gdvBasisNoteEl.textContent = 'Based on the median sold price for this property type in the area — not adjusted for your floor area, so an unusually large or small property may need its own valuation.';
   }
-  if (usedCachedComps) gdvNoteText += ' · comps reused from earlier this session';
-  gdvNoteEl.textContent = gdvNoteText;
 
   renderGdvExplainer({
     usedFallback, usedPropTypeFallback, growthIsFallback, district, postcode, region, devType, propType,
-    compCount: last12.length, propTypeFilteredCount, gdvMultiplier, usedCachedComps, compsFetchedAt
+    compCount: last12.length, propTypeFilteredCount, gdvMultiplier, usedCachedComps, compsFetchedAt,
+    usedGdvOverride, gdv, gdvComputed, gdvMedianLabel
   });
 
   renderBuildCostExplainer({
@@ -1648,7 +1702,7 @@ function buildDealSummary({ purchase, gdv, buildMid, rlv, margin, sdlt, bcis, us
   // construction — only a custom figure can be inflated, so this only ever
   // fires for overrides, same threshold used to flag it elsewhere.
   const buildCostAlsoHigh = usedBuildCostOverride
-    && buildCostImpliedRate > bcis.high * (1 + BUILD_COST_OVERRIDE_FLAG_THRESHOLD);
+    && buildCostImpliedRate > bcis.high * (1 + OVERRIDE_FLAG_THRESHOLD);
 
   // Positive = % headroom on that lever alone before the deal fails.
   // Whichever is smaller is the one actually at risk of doing so first —
@@ -2300,8 +2354,8 @@ function computeMissedItems(a) {
   // Custom build cost sits well outside the BCIS benchmark range in either
   // direction — worth a second look either way, not just when it's high.
   if (a.usedBuildCostOverride) {
-    const lowBound = a.bcis.low * (1 - BUILD_COST_OVERRIDE_FLAG_THRESHOLD);
-    const highBound = a.bcis.high * (1 + BUILD_COST_OVERRIDE_FLAG_THRESHOLD);
+    const lowBound = a.bcis.low * (1 - OVERRIDE_FLAG_THRESHOLD);
+    const highBound = a.bcis.high * (1 + OVERRIDE_FLAG_THRESHOLD);
     const impliedRate = Math.round(a.buildCostImpliedRate);
     if (impliedRate > highBound) {
       items.push({
@@ -2314,6 +2368,27 @@ function computeMissedItems(a) {
         severity: 'warn',
         title: 'Your build cost is well below the BCIS benchmark',
         text: `Your figure implies £${impliedRate.toLocaleString('en-GB')}/m², more than 25% below the BCIS range of £${a.bcis.low.toLocaleString('en-GB')}–£${a.bcis.high.toLocaleString('en-GB')}/m² for ${a.devType.toLowerCase()}. Worth double-checking it covers the full scope of works — a figure this far under benchmark can mean missing items (fees, finishes, M&E) rather than a genuinely cheaper build.`
+      });
+    }
+  }
+
+  // Custom GDV sits well outside the district median in either direction —
+  // worth a second look either way, not just when it's optimistic.
+  if (a.usedGdvOverride) {
+    const medianLabel = a.usedFallback ? 'regional average' : 'district median';
+    const lowBound = a.gdvComputed * (1 - OVERRIDE_FLAG_THRESHOLD);
+    const highBound = a.gdvComputed * (1 + OVERRIDE_FLAG_THRESHOLD);
+    if (a.gdv > highBound) {
+      items.push({
+        severity: 'warn',
+        title: 'Your GDV estimate is well above the district median',
+        text: `Your figure of ${fmt(a.gdv)} is more than 25% above the ${medianLabel} of ${fmt(a.gdvComputed)} for comparable ${a.propType.toLowerCase()} sales in this area. Worth checking it against a recent agent valuation or your own comps before relying on it — an optimistic exit price is one of the easiest ways to overstate a deal's margin.`
+      });
+    } else if (a.gdv < lowBound) {
+      items.push({
+        severity: 'warn',
+        title: 'Your GDV estimate is well below the district median',
+        text: `Your figure of ${fmt(a.gdv)} is more than 25% below the ${medianLabel} of ${fmt(a.gdvComputed)} for comparable ${a.propType.toLowerCase()} sales in this area. If that's deliberate caution, fine — but worth checking it isn't underselling what this property could realistically achieve.`
       });
     }
   }
