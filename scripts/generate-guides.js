@@ -288,7 +288,7 @@ const STYLE = `
 
 function nav() {
   return `<nav class="g-nav">
-    <a class="g-nav-logo" href="/guides">Avalo<span>r</span></a>
+    <a class="g-nav-logo" href="/">Avalo<span>r</span></a>
     <div class="g-nav-links">
       <a href="/guides">All guides</a>
       <a class="btn btn-primary" href="/">Try Avalor free</a>
