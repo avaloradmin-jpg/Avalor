@@ -483,8 +483,13 @@ http.createServer(async (req, res) => {
   }
 
   // ── Static file serving ─────────────────────────────────────────────────────
+  // Mirrors Vercel's cleanUrls:true — an extensionless path like /guides or
+  // /guides/foo resolves to guides.html / guides/foo.html on disk.
   const urlPath = req.url.split('?')[0];
   let filePath = path.join(ROOT, urlPath === '/' ? '/index.html' : urlPath);
+  let stat;
+  try { stat = fs.statSync(filePath); } catch (_) {}
+  if (!path.extname(filePath) && (!stat || stat.isDirectory())) filePath += '.html';
   const ext = path.extname(filePath);
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }

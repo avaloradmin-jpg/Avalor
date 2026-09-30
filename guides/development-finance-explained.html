@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Development Finance Explained | Avalor</title>
+  <meta name="description" content="Development finance is quoted monthly and costs more than you think once fees are in. Here's what to expect and what catches people out."/>
+  <link rel="canonical" href="https://avalor.co.uk/guides/development-finance-explained"/>
+  <meta name="robots" content="index, follow"/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:title" content="Development Finance Explained | Avalor"/>
+  <meta property="og:description" content="Development finance is quoted monthly and costs more than you think once fees are in. Here's what to expect and what catches people out."/>
+  <meta property="og:url" content="https://avalor.co.uk/guides/development-finance-explained"/>
+  <meta name="twitter:card" content="summary"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+  <style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --green: #1D9E75; --green-dark: #0F6E56; --green-light: #E1F5EE; --green-text: #085041;
+    --amber: #BA7517; --amber-light: #FAEEDA;
+    --bg: #F7F8FA; --bg-card: #FFFFFF; --bg-secondary: #F1F3F6;
+    --border: #E4E7EC; --text: #111827; --text-secondary: #6B7280; --text-tertiary: #9CA3AF;
+    --radius: 10px; --radius-sm: 6px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.04);
+  }
+  body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5; min-height: 100vh; }
+  a { color: inherit; }
+
+  .g-nav { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 16px 2rem; background: rgba(255,255,255,0.92); backdrop-filter: blur(6px); border-bottom: 1px solid var(--border); }
+  .g-nav-logo { font-size: 22px; font-weight: 600; letter-spacing: -0.5px; color: var(--text); text-decoration: none; }
+  .g-nav-logo span { color: var(--green); }
+  .g-nav-links { display: flex; align-items: center; gap: 1.5rem; }
+  .g-nav-links a { font-size: 14px; font-weight: 500; color: var(--text); text-decoration: none; }
+  .g-nav-links a:hover { color: var(--green); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 16px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); text-decoration: none; }
+  .btn-primary { background: var(--green); color: #fff; border-color: var(--green); }
+  .btn-primary:hover { background: var(--green-dark); border-color: var(--green-dark); }
+
+  .g-hero { max-width: 760px; margin: 0 auto; padding: 3.5rem 2rem 2.5rem; text-align: center; }
+  .g-hero h1 { font-size: 36px; font-weight: 600; letter-spacing: -0.5px; line-height: 1.25; margin-bottom: 1rem; color: var(--text); }
+  .g-hero p { font-size: 16px; color: var(--text-secondary); line-height: 1.6; }
+
+  .g-list { max-width: 820px; margin: 0 auto; padding: 0 2rem 4rem; display: flex; flex-direction: column; gap: 1rem; }
+  .g-card { display: block; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.5rem 1.75rem; text-decoration: none; transition: border-color 0.15s, box-shadow 0.15s; }
+  .g-card:hover { border-color: var(--green); box-shadow: var(--shadow-md); }
+  .g-card-title { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .g-card-summary { font-size: 14px; color: var(--text-secondary); line-height: 1.55; }
+
+  .g-article-wrap { max-width: 700px; margin: 0 auto; padding: 3rem 1.5rem 2rem; }
+  .g-back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--text-secondary); text-decoration: none; margin-bottom: 1.75rem; }
+  .g-back:hover { color: var(--green); }
+  .g-article-wrap h1 { font-size: 32px; font-weight: 600; line-height: 1.25; letter-spacing: -0.5px; margin-bottom: 0.5rem; color: var(--text); }
+  .g-meta { font-size: 13px; color: var(--text-tertiary); margin-bottom: 2.25rem; }
+  article h2 { font-size: 21px; font-weight: 600; margin: 2.25rem 0 0.75rem; color: var(--text); }
+  article h3 { font-size: 17px; font-weight: 600; margin: 1.5rem 0 0.5rem; color: var(--text); }
+  article p { font-size: 15.5px; line-height: 1.7; color: var(--text); margin-bottom: 1rem; }
+  article ul, article ol { margin: 0 0 1.1rem 1.25rem; }
+  article li { font-size: 15.5px; line-height: 1.7; margin-bottom: 0.5rem; color: var(--text); }
+  article strong { font-weight: 600; }
+  article a { color: var(--green-text); text-decoration: underline; text-decoration-color: rgba(29,158,117,0.35); }
+  article a:hover { text-decoration-color: var(--green-text); }
+  .g-callout { background: var(--amber-light); border: 1px solid var(--amber); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 1.5rem; font-size: 13.5px; line-height: 1.6; color: #7A4E00; }
+
+  .g-table-wrap { overflow-x: auto; margin-bottom: 1.25rem; -webkit-overflow-scrolling: touch; }
+  article table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  article th, article td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  article th { background: var(--bg-secondary); font-weight: 600; color: var(--text); }
+  article td { color: var(--text); }
+  article tr:last-child td { border-bottom: none; }
+
+  .g-related { max-width: 700px; margin: 0.5rem auto 0; padding: 2rem 1.5rem 0; border-top: 1px solid var(--border); }
+  .g-related h2 { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 0.85rem; }
+  .g-related ul { list-style: none; margin: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+  .g-related a { font-size: 14.5px; font-weight: 500; color: var(--green-text); text-decoration: none; }
+  .g-related a:hover { text-decoration: underline; }
+
+  .g-cta-card { max-width: 700px; margin: 2.5rem auto 0; text-align: center; padding: 2.5rem 2rem; background: linear-gradient(135deg, #0F6E56 0%, #1D9E75 50%, #2DC68E 100%); border-radius: 16px; color: #fff; }
+  .g-cta-card h2 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+  .g-cta-card p { font-size: 14px; opacity: 0.9; margin-bottom: 1.25rem; }
+  .g-cta-btn { display: inline-block; background: #fff; color: var(--green-dark); font-weight: 600; padding: 11px 24px; border-radius: var(--radius-sm); text-decoration: none; font-size: 14px; }
+
+  .g-footer { padding: 2.5rem 2rem; text-align: center; font-size: 13px; color: var(--text-tertiary); }
+  .g-footer a { color: var(--text-secondary); text-decoration: none; }
+  .g-footer a:hover { color: var(--green); }
+
+  @media (max-width: 640px) {
+    .g-nav { padding: 14px 1.25rem; }
+    .g-hero { padding: 2.5rem 1.25rem 2rem; }
+    .g-hero h1 { font-size: 28px; }
+    .g-list { padding: 0 1.25rem 3rem; }
+    .g-article-wrap { padding: 2rem 1.25rem 1.5rem; }
+    .g-article-wrap h1 { font-size: 26px; }
+    .g-cta-card { margin-left: 1.25rem; margin-right: 1.25rem; padding: 2rem 1.5rem; }
+    .g-related { padding: 2rem 1.25rem 0; }
+  }
+</style>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Development Finance Explained","description":"Development finance is quoted monthly and costs more than you think once fees are in. Here's what to expect and what catches people out.","url":"https://avalor.co.uk/guides/development-finance-explained","datePublished":"2026-09-30","dateModified":"2026-09-30","author":{"@type":"Organization","name":"Avalor"},"publisher":{"@type":"Organization","name":"Avalor","url":"https://avalor.co.uk"}}</script>
+</head>
+<body>
+<nav class="g-nav">
+    <a class="g-nav-logo" href="/guides">Avalo<span>r</span></a>
+    <div class="g-nav-links">
+      <a href="/guides">All guides</a>
+      <a class="btn btn-primary" href="/">Try Avalor free</a>
+    </div>
+  </nav>
+<div class="g-article-wrap">
+  <a class="g-back" href="/guides"><i class="ti ti-arrow-left"></i>All guides</a>
+  <h1>Development Finance Explained</h1>
+  <div class="g-meta">Avalor guides</div>
+  <article>
+      <p>Most people buying a property to develop aren't using a normal mortgage. Lenders won't lend on something that isn't habitable, and they won't lend to someone planning to sell within a year. So you end up with development finance or a bridging loan instead.</p>
+      <p>It's short term, secured on the property, and it costs a lot more than a mortgage.</p>
+      <p>Rates are usually quoted monthly rather than annually, which is the first thing that trips people up. Something quoted at 0.85% a month is just over 10% a year. Typical bridging at the moment sits somewhere around 0.75% to 1.2% a month depending on the deal, your experience and how much you're putting in yourself. Development finance for bigger schemes with staged drawdowns can be structured differently again.</p>
+      <p>Then there are the fees, and there are more of them than you'd think. An arrangement fee of 1% to 2% of the loan. A valuation fee. Legal fees, usually both yours and the lender's. Sometimes an exit fee when you repay. Together those can add another 2% to 3% of the loan before you've paid a penny of interest.</p>
+      <p>On a £200,000 loan over nine months at 1% a month, you're looking at roughly £18,000 of interest plus maybe £6,000 of fees. £24,000 gone, on a job where your profit might be £50,000.</p>
+      <p>Most lenders won't fund the whole thing. Expect to put in 25% to 30% of the purchase yourself, and on refurbishment work the build money often comes in stages as the work completes, with a monitoring surveyor signing off each stage. That's fine, but it means your own cash goes in first.</p>
+      <p>Interest is often rolled up rather than paid monthly, so it accrues and comes off at the end. That helps cashflow while the job's running, but it also means the debt grows every month the project runs late. A three month overrun on that example costs another £6,000.</p>
+      <p>Which is really the point. Finance is the cost most directly tied to how long the job takes, and it's the one that quietly punishes you for delays. Everything else is fixed the day you agree it.</p>
+      <p>If you're paying cash, none of this applies, and that's a genuine advantage that doesn't get talked about enough. Your money's still tied up and not earning elsewhere, but you're not paying anyone for the privilege and you're not on a clock.</p>
+      <p>Avalor estimates finance at 6.5% of the purchase and build by default, which is a reasonable flat assumption for a shorter job. If you've been quoted a rate you can put your own in, and if you're funding it yourself you can take it out entirely and see what that does to the numbers.</p>
+  </article>
+</div>
+<div class="g-related">
+  <h2>Related guides</h2>
+  <ul><li><a href="/guides/what-is-residual-land-value">What Is Residual Land Value and How Do You Work It Out?</a></li><li><a href="/guides/profit-margin-property-development">What Profit Margin Should You Aim For on a Property Development?</a></li><li><a href="/guides/what-is-a-development-appraisal">What Is a Development Appraisal?</a></li></ul>
+</div>
+<div class="g-cta-card">
+    <h2>Know in minutes whether your next deal stacks up</h2>
+    <p>Run instant GDV, build cost, SDLT, finance and risk analysis for any UK postcode — with a clear viability verdict.</p>
+    <a class="g-cta-btn" href="/">Start your free trial at avalor.co.uk</a>
+  </div>
+<div class="g-footer">&copy; 2026 Avalor. All rights reserved. · <a href="/">avalor.co.uk</a></div>
+</body>
+</html>

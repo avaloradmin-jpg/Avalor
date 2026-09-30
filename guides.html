@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Property Development Guides | Avalor</title>
+  <meta name="description" content="Free guides to UK property development — GDV, residual land value, stamp duty, build costs, HMO and flat conversions, development finance and more."/>
+  <link rel="canonical" href="https://avalor.co.uk/guides"/>
+  <meta name="robots" content="index, follow"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:title" content="Property Development Guides | Avalor"/>
+  <meta property="og:description" content="Free guides to UK property development — GDV, residual land value, stamp duty, build costs, HMO and flat conversions, development finance and more."/>
+  <meta property="og:url" content="https://avalor.co.uk/guides"/>
+  <meta name="twitter:card" content="summary"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"/>
+  <style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --green: #1D9E75; --green-dark: #0F6E56; --green-light: #E1F5EE; --green-text: #085041;
+    --amber: #BA7517; --amber-light: #FAEEDA;
+    --bg: #F7F8FA; --bg-card: #FFFFFF; --bg-secondary: #F1F3F6;
+    --border: #E4E7EC; --text: #111827; --text-secondary: #6B7280; --text-tertiary: #9CA3AF;
+    --radius: 10px; --radius-sm: 6px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.04);
+  }
+  body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5; min-height: 100vh; }
+  a { color: inherit; }
+
+  .g-nav { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 16px 2rem; background: rgba(255,255,255,0.92); backdrop-filter: blur(6px); border-bottom: 1px solid var(--border); }
+  .g-nav-logo { font-size: 22px; font-weight: 600; letter-spacing: -0.5px; color: var(--text); text-decoration: none; }
+  .g-nav-logo span { color: var(--green); }
+  .g-nav-links { display: flex; align-items: center; gap: 1.5rem; }
+  .g-nav-links a { font-size: 14px; font-weight: 500; color: var(--text); text-decoration: none; }
+  .g-nav-links a:hover { color: var(--green); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 16px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); text-decoration: none; }
+  .btn-primary { background: var(--green); color: #fff; border-color: var(--green); }
+  .btn-primary:hover { background: var(--green-dark); border-color: var(--green-dark); }
+
+  .g-hero { max-width: 760px; margin: 0 auto; padding: 3.5rem 2rem 2.5rem; text-align: center; }
+  .g-hero h1 { font-size: 36px; font-weight: 600; letter-spacing: -0.5px; line-height: 1.25; margin-bottom: 1rem; color: var(--text); }
+  .g-hero p { font-size: 16px; color: var(--text-secondary); line-height: 1.6; }
+
+  .g-list { max-width: 820px; margin: 0 auto; padding: 0 2rem 4rem; display: flex; flex-direction: column; gap: 1rem; }
+  .g-card { display: block; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.5rem 1.75rem; text-decoration: none; transition: border-color 0.15s, box-shadow 0.15s; }
+  .g-card:hover { border-color: var(--green); box-shadow: var(--shadow-md); }
+  .g-card-title { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .g-card-summary { font-size: 14px; color: var(--text-secondary); line-height: 1.55; }
+
+  .g-article-wrap { max-width: 700px; margin: 0 auto; padding: 3rem 1.5rem 2rem; }
+  .g-back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--text-secondary); text-decoration: none; margin-bottom: 1.75rem; }
+  .g-back:hover { color: var(--green); }
+  .g-article-wrap h1 { font-size: 32px; font-weight: 600; line-height: 1.25; letter-spacing: -0.5px; margin-bottom: 0.5rem; color: var(--text); }
+  .g-meta { font-size: 13px; color: var(--text-tertiary); margin-bottom: 2.25rem; }
+  article h2 { font-size: 21px; font-weight: 600; margin: 2.25rem 0 0.75rem; color: var(--text); }
+  article h3 { font-size: 17px; font-weight: 600; margin: 1.5rem 0 0.5rem; color: var(--text); }
+  article p { font-size: 15.5px; line-height: 1.7; color: var(--text); margin-bottom: 1rem; }
+  article ul, article ol { margin: 0 0 1.1rem 1.25rem; }
+  article li { font-size: 15.5px; line-height: 1.7; margin-bottom: 0.5rem; color: var(--text); }
+  article strong { font-weight: 600; }
+  article a { color: var(--green-text); text-decoration: underline; text-decoration-color: rgba(29,158,117,0.35); }
+  article a:hover { text-decoration-color: var(--green-text); }
+  .g-callout { background: var(--amber-light); border: 1px solid var(--amber); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 1.5rem; font-size: 13.5px; line-height: 1.6; color: #7A4E00; }
+
+  .g-table-wrap { overflow-x: auto; margin-bottom: 1.25rem; -webkit-overflow-scrolling: touch; }
+  article table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  article th, article td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  article th { background: var(--bg-secondary); font-weight: 600; color: var(--text); }
+  article td { color: var(--text); }
+  article tr:last-child td { border-bottom: none; }
+
+  .g-related { max-width: 700px; margin: 0.5rem auto 0; padding: 2rem 1.5rem 0; border-top: 1px solid var(--border); }
+  .g-related h2 { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 0.85rem; }
+  .g-related ul { list-style: none; margin: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+  .g-related a { font-size: 14.5px; font-weight: 500; color: var(--green-text); text-decoration: none; }
+  .g-related a:hover { text-decoration: underline; }
+
+  .g-cta-card { max-width: 700px; margin: 2.5rem auto 0; text-align: center; padding: 2.5rem 2rem; background: linear-gradient(135deg, #0F6E56 0%, #1D9E75 50%, #2DC68E 100%); border-radius: 16px; color: #fff; }
+  .g-cta-card h2 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+  .g-cta-card p { font-size: 14px; opacity: 0.9; margin-bottom: 1.25rem; }
+  .g-cta-btn { display: inline-block; background: #fff; color: var(--green-dark); font-weight: 600; padding: 11px 24px; border-radius: var(--radius-sm); text-decoration: none; font-size: 14px; }
+
+  .g-footer { padding: 2.5rem 2rem; text-align: center; font-size: 13px; color: var(--text-tertiary); }
+  .g-footer a { color: var(--text-secondary); text-decoration: none; }
+  .g-footer a:hover { color: var(--green); }
+
+  @media (max-width: 640px) {
+    .g-nav { padding: 14px 1.25rem; }
+    .g-hero { padding: 2.5rem 1.25rem 2rem; }
+    .g-hero h1 { font-size: 28px; }
+    .g-list { padding: 0 1.25rem 3rem; }
+    .g-article-wrap { padding: 2rem 1.25rem 1.5rem; }
+    .g-article-wrap h1 { font-size: 26px; }
+    .g-cta-card { margin-left: 1.25rem; margin-right: 1.25rem; padding: 2rem 1.5rem; }
+    .g-related { padding: 2rem 1.25rem 0; }
+  }
+</style>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"CollectionPage","name":"Property Development Guides | Avalor","description":"Free guides to UK property development — GDV, residual land value, stamp duty, build costs, HMO and flat conversions, development finance and more.","url":"https://avalor.co.uk/guides"}</script>
+</head>
+<body>
+<nav class="g-nav">
+    <a class="g-nav-logo" href="/guides">Avalo<span>r</span></a>
+    <div class="g-nav-links">
+      <a href="/guides">All guides</a>
+      <a class="btn btn-primary" href="/">Try Avalor free</a>
+    </div>
+  </nav>
+<div class="g-hero">
+  <h1>Property development guides</h1>
+  <p>Plain-English guides to the numbers and rules behind UK property development — from working out GDV to what a loft conversion actually costs.</p>
+</div>
+<div class="g-list">
+  <a class="g-card" href="/guides/what-is-gdv">
+    <div class="g-card-title">What Is GDV and How Do You Work It Out?</div>
+    <div class="g-card-summary">What gross development value means, how to work it out from sold prices, and where people get it wrong.</div>
+  </a>
+  <a class="g-card" href="/guides/stamp-duty-additional-property-development">
+    <div class="g-card-title">Stamp Duty When You're Buying an Additional Property or a Development</div>
+    <div class="g-card-summary">How the additional property rates work, with a worked example and the reliefs worth knowing about.</div>
+  </a>
+  <a class="g-card" href="/guides/what-is-residual-land-value">
+    <div class="g-card-title">What Is Residual Land Value and How Do You Work It Out?</div>
+    <div class="g-card-summary">How to work out the most you can pay for a site and still hit your target profit.</div>
+  </a>
+  <a class="g-card" href="/guides/profit-margin-property-development">
+    <div class="g-card-title">What Profit Margin Should You Aim For on a Property Development?</div>
+    <div class="g-card-summary">Profit on GDV versus profit on cost, what to aim for, and why the sale price hurts more than the build.</div>
+  </a>
+  <a class="g-card" href="/guides/loft-conversion-cost-uk">
+    <div class="g-card-title">How Much Does a Loft Conversion Cost in the UK?</div>
+    <div class="g-card-summary">Typical costs per square metre by conversion type, how location changes it, and what people forget to budget for.</div>
+  </a>
+  <a class="g-card" href="/guides/article-4-direction-hmo">
+    <div class="g-card-title">What Is an Article 4 Direction, and Why Does It Matter for HMOs?</div>
+    <div class="g-card-summary">How Article 4 removes permitted development rights, and why concentration limits are usually what stops an HMO.</div>
+  </a>
+  <a class="g-card" href="/guides/build-renovation-cost-per-square-metre-uk">
+    <div class="g-card-title">What Does It Cost to Build or Renovate Per Square Metre in the UK?</div>
+    <div class="g-card-summary">Typical rates by job type, with and without a builder running it, plus how much location changes the number.</div>
+  </a>
+  <a class="g-card" href="/guides/does-a-property-deal-stack-up">
+    <div class="g-card-title">How Do You Know if a Property Deal Stacks Up?</div>
+    <div class="g-card-summary">The order to run the numbers in, what people forget, and the check most people skip.</div>
+  </a>
+  <a class="g-card" href="/guides/hmo-conversion-cost">
+    <div class="g-card-title">What Does It Cost to Convert a House Into an HMO?</div>
+    <div class="g-card-summary">Why the range is so wide, what the big cost items are, and the planning rules that stop most schemes.</div>
+  </a>
+  <a class="g-card" href="/guides/flat-conversion-cost">
+    <div class="g-card-title">What Does It Cost to Convert a House Into Flats?</div>
+    <div class="g-card-summary">Why per square metre overstates it, the real cost items, and the planning and legal side people forget.</div>
+  </a>
+  <a class="g-card" href="/guides/development-finance-explained">
+    <div class="g-card-title">Development Finance Explained</div>
+    <div class="g-card-summary">How bridging and development finance actually works, what it costs, and why delays hurt more than anything else.</div>
+  </a>
+  <a class="g-card" href="/guides/what-is-a-development-appraisal">
+    <div class="g-card-title">What Is a Development Appraisal?</div>
+    <div class="g-card-summary">What an appraisal actually does, the costs it has to include, and why the non financial checks matter as much as the numbers.</div>
+  </a>
+</div>
+<div class="g-cta-card">
+    <h2>Know in minutes whether your next deal stacks up</h2>
+    <p>Run instant GDV, build cost, SDLT, finance and risk analysis for any UK postcode — with a clear viability verdict.</p>
+    <a class="g-cta-btn" href="/">Start your free trial at avalor.co.uk</a>
+  </div>
+<div class="g-footer">&copy; 2026 Avalor. All rights reserved. · <a href="/">avalor.co.uk</a></div>
+</body>
+</html>
