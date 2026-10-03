@@ -309,7 +309,16 @@ function ctaCard() {
 }
 
 function head({ title, description, canonical, ogType, jsonLd }) {
-  return `<meta charset="UTF-8"/>
+  return `<!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-L3XNXZGXV0"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-L3XNXZGXV0');
+  </script>
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>${title}</title>
   <meta name="description" content="${description}"/>
